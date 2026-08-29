@@ -1,0 +1,211 @@
+# Argus — config/companies.yaml (Phase 2)
+# stipend figures are self-reported/cycle-dependent — re-verify at application time,
+# same lesson as the "don't trust aggregators" rule for postings themselves.
+# ats_type: "verify" means check devtools Network tab before writing the adapter.
+
+product_based:
+  - name: Google
+    stipend: "₹1.25–1.5L/month (Bengaluru/Hyderabad, 2026 figures)"
+    careers_page_url: https://careers.google.com
+    ats_type: custom
+  - name: Uber
+    stipend: "₹1.1–1.6L/month"
+    careers_page_url: https://www.uber.com/careers
+    ats_type: verify
+  - name: Microsoft
+    stipend: "verify — broad Big Tech India range ₹40K–80K/month, some report higher"
+    careers_page_url: https://careers.microsoft.com
+    ats_type: custom
+  - name: Amazon
+    stipend: verify
+    careers_page_url: https://www.amazon.jobs
+    ats_type: custom
+  - name: Adobe
+    stipend: "known for strong stipends, verify"
+    careers_page_url: https://careers.adobe.com
+    ats_type: verify
+  - name: Atlassian
+    stipend: "known for strong stipends, verify"
+    careers_page_url: https://www.atlassian.com/company/careers
+    ats_type: verify
+  - name: Salesforce
+    stipend: verify
+    careers_page_url: https://careers.salesforce.com
+    ats_type: verify
+  - name: LinkedIn
+    stipend: "known for strong stipends, verify"
+    careers_page_url: https://careers.linkedin.com
+    ats_type: verify
+  - name: Flipkart
+    stipend: "Runway program, verify"
+    careers_page_url: https://www.flipkartcareers.com
+    ats_type: verify
+  - name: Walmart Global Tech
+    stipend: verify
+    careers_page_url: https://careers.walmart.com/global-tech
+    ats_type: verify
+  - name: Sprinklr
+    stipend: "reputation for high stipend among Indian campus circles, verify"
+    careers_page_url: https://www.sprinklr.com/careers/
+    ats_type: verify
+  - name: Media.net
+    stipend: "long-standing reputation for high SDE intern stipend in India, verify"
+    careers_page_url: https://media.net/careers/
+    ats_type: verify
+  - name: ServiceNow
+    stipend: verify
+    careers_page_url: https://careers.servicenow.com
+    ats_type: verify
+  - name: Nutanix
+    stipend: verify
+    careers_page_url: https://www.nutanix.com/careers
+    ats_type: verify
+  - name: Rubrik
+    stipend: verify
+    careers_page_url: https://www.rubrik.com/careers
+    ats_type: verify
+  - name: Qualcomm
+    stipend: verify
+    careers_page_url: https://www.qualcomm.com/company/careers
+    ats_type: verify
+  - name: Samsung R&D Institute India
+    stipend: verify
+    careers_page_url: https://research.samsung.com/sri-in-careers
+    ats_type: verify
+  - name: Oracle
+    stipend: verify
+    careers_page_url: https://www.oracle.com/careers/
+    ats_type: verify
+  - name: SAP Labs India
+    stipend: verify
+    careers_page_url: https://www.sap.com/india/about/careers.html
+    ats_type: verify
+
+banking_and_quant:
+  - name: Goldman Sachs
+    stipend: "₹75K–1L+/month (Technology division, APAC), verify"
+    careers_page_url: https://www.goldmansachs.com/careers/
+    ats_type: custom
+  - name: JPMorgan Chase
+    stipend: verify
+    careers_page_url: https://careers.jpmorgan.com
+    ats_type: custom
+  - name: Morgan Stanley
+    stipend: verify
+    careers_page_url: https://www.morganstanley.com/people-opportunities
+    ats_type: verify
+  - name: Citi
+    stipend: verify
+    careers_page_url: https://jobs.citi.com
+    ats_type: verify
+  - name: Deutsche Bank
+    stipend: verify
+    careers_page_url: https://careers.db.com
+    ats_type: verify
+  - name: Barclays
+    stipend: verify
+    careers_page_url: https://search.jobs.barclays
+    ats_type: verify
+  - name: Wells Fargo
+    stipend: verify
+    careers_page_url: https://www.wellsfargojobs.com
+    ats_type: verify
+  - name: American Express
+    stipend: verify
+    careers_page_url: https://aexp.eightfold.ai
+    ats_type: verify
+  - name: UBS
+    stipend: verify
+    careers_page_url: https://www.ubs.com/careers
+    ats_type: verify
+  - name: HSBC
+    stipend: verify
+    careers_page_url: https://www.hsbc.com/careers
+    ats_type: verify
+  - name: BNY Mellon
+    stipend: verify
+    careers_page_url: https://www.bny.com/careers
+    ats_type: verify
+  # --- quant / HFT: pays far above banking for the same DSA skillset ---
+  - name: Citadel Securities
+    stipend: "US intern base ~$4,800/wk + $15K housing (US program); India/Gurugram figure unconfirmed — verify separately"
+    careers_page_url: https://www.citadelsecurities.com/careers/
+    ats_type: verify
+  - name: Tower Research Capital
+    stipend: "Gurugram office, reputation for very high stipends, verify"
+    careers_page_url: https://www.tower-research.com/careers
+    ats_type: verify
+  - name: Graviton Research Capital
+    stipend: "up to ₹57L for a 2-month internship (reported)"
+    careers_page_url: https://gravitontrading.com/careers
+    ats_type: verify
+  - name: AlphaGrep
+    stipend: "high, competing with Graviton/Quadeye, verify"
+    careers_page_url: https://www.alphagrep.com/careers
+    ats_type: verify
+  - name: Quadeye
+    stipend: "high, verify"
+    careers_page_url: https://www.quadeye.com/careers
+    ats_type: verify
+  - name: IMC Trading
+    stipend: "expanding India headcount, verify"
+    careers_page_url: https://www.imc.com/eu/careers
+    ats_type: verify
+  - name: Optiver
+    stipend: "opened Mumbai office 2024, verify"
+    careers_page_url: https://optiver.com/working-at-optiver/career-opportunities/
+    ats_type: verify
+  - name: DE Shaw India
+    stipend: "Hyderabad office, long-standing reputation for top-tier stipends, verify"
+    careers_page_url: https://www.deshaw.com/careers
+    ats_type: verify
+  - name: WorldQuant
+    stipend: "Mumbai office, verify"
+    careers_page_url: https://www.worldquant.com/careers/
+    ats_type: verify
+
+well_funded_startups:
+  - name: Razorpay
+    stipend: verify
+    careers_page_url: https://razorpay.com/careers/
+    ats_type: verify
+  - name: CRED
+    stipend: "reputation for high stipends among well-funded fintechs, verify"
+    careers_page_url: https://careers.cred.club
+    ats_type: verify
+  - name: Zerodha
+    stipend: "profitable/bootstrapped, known for competitive stipends, verify"
+    careers_page_url: https://careers.zerodha.com
+    ats_type: verify
+  - name: PhonePe
+    stipend: verify
+    careers_page_url: https://www.phonepe.com/careers/
+    ats_type: verify
+  - name: Groww
+    stipend: verify
+    careers_page_url: https://groww.in/careers
+    ats_type: verify
+  - name: Meesho
+    stipend: verify
+    careers_page_url: https://www.meesho.io/careers
+    ats_type: verify
+  - name: Postman
+    stipend: "API tooling unicorn, reputation for strong eng stipends, verify"
+    careers_page_url: https://www.postman.com/company/careers/
+    ats_type: verify
+  - name: Chargebee
+    stipend: verify
+    careers_page_url: https://www.chargebee.com/careers/
+    ats_type: verify
+  - name: Freshworks
+    stipend: "Nasdaq-listed, verify"
+    careers_page_url: https://www.freshworks.com/company/careers/
+    ats_type: verify
+  - name: Zoho
+    stipend: "self-funded/profitable but historically pays below market vs. peers, verify"
+    careers_page_url: https://careers.zoho.com
+    ats_type: verify
+  - name: Dream11
+    stipend: verify
+    careers_page_url: https://careers.dream11.com
+    ats_type: verify
