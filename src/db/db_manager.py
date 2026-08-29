@@ -82,6 +82,50 @@ class DatabaseManager:
                 cur.execute("SELECT id FROM projects ORDER BY id;")
                 return [r[0] for r in cur.fetchall()]
 
+    def sync_companies_from_config(self, config_path: Optional[Path] = None) -> int:
+        """Syncs target companies from YAML configuration into the companies table."""
+        from src.config.companies import load_companies_config
+        catalog = load_companies_config(config_path)
+        companies = catalog.get_all_companies()
+        if not companies:
+            return 0
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                for comp in companies:
+                    cur.execute(
+                        """
+                        INSERT INTO companies (name, ats_type, ats_url, careers_page_url, updated_at)
+                        VALUES (%s, %s, %s, %s, NOW())
+                        ON CONFLICT (name) DO UPDATE
+                        SET ats_type = EXCLUDED.ats_type,
+                            ats_url = COALESCE(EXCLUDED.ats_url, companies.ats_url),
+                            careers_page_url = EXCLUDED.careers_page_url,
+                            updated_at = NOW();
+                        """,
+                        (comp.name, comp.ats_type, comp.ats_url, comp.careers_page_url),
+                    )
+                cur.execute("SELECT COUNT(*) FROM companies;")
+                count = cur.fetchone()[0]
+            conn.commit()
+        return count
+
+    def get_all_companies(self) -> List[Company]:
+        """Retrieves all monitored companies from the database."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM companies ORDER BY name;")
+                rows = cur.fetchall()
+                return [Company(**dict(r)) for r in rows]
+
+    def get_company_by_name(self, name: str) -> Optional[Company]:
+        """Retrieves a single company by name."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM companies WHERE LOWER(name) = LOWER(%s);", (name.strip(),))
+                row = cur.fetchone()
+                return Company(**dict(row)) if row else None
+
 
 if __name__ == "__main__":
     import argparse
@@ -90,6 +134,8 @@ if __name__ == "__main__":
     parser.add_argument("--init", action="store_true", help="Initialize database schema")
     parser.add_argument("--seed", action="store_true", help="Seed candidate project portfolio")
     parser.add_argument("--list-projects", action="store_true", help="List all candidate projects")
+    parser.add_argument("--sync-companies", action="store_true", help="Sync target companies from config/companies.yaml")
+    parser.add_argument("--list-companies", action="store_true", help="List all companies in database")
     args = parser.parse_args()
 
     db = DatabaseManager()
@@ -105,6 +151,11 @@ if __name__ == "__main__":
             count = db.seed_projects()
             print(f"Successfully seeded/updated {count} projects.")
 
+        if args.sync_companies:
+            print("Syncing target companies from config...")
+            count = db.sync_companies_from_config()
+            print(f"Successfully synced {count} companies into database.")
+
         if args.list_projects:
             projects = db.get_all_projects()
             print(f"\n--- Ground Truth Candidate Projects ({len(projects)}) ---")
@@ -112,7 +163,13 @@ if __name__ == "__main__":
                 print(f"• [{p.id}] {p.name}: {p.summary[:80]}...")
                 print(f"  Tags: {', '.join(p.tags)}")
 
-        if not (args.init or args.seed or args.list_projects):
+        if args.list_companies:
+            companies = db.get_all_companies()
+            print(f"\n--- Monitored Companies ({len(companies)}) ---")
+            for c in companies:
+                print(f"• [{c.id}] {c.name} (ATS: {c.ats_type}) -> {c.careers_page_url}")
+
+        if not (args.init or args.seed or args.sync_companies or args.list_projects or args.list_companies):
             parser.print_help()
 
     except Exception as e:
