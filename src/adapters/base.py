@@ -71,11 +71,31 @@ class BaseAdapter(ABC):
                     current_delay *= self.backoff_factor
                     continue
 
+                if 400 <= response.status_code < 500:
+                    # Client errors (400, 401, 403, 404) won't succeed on retry
+                    response.raise_for_status()
+
                 response.raise_for_status()
                 parsed = response.json()
                 if isinstance(parsed, list):
                     return {"jobs": parsed}
                 return parsed
+
+            except requests.HTTPError as http_err:
+                if http_err.response is not None and 400 <= http_err.response.status_code < 500 and http_err.response.status_code != 429:
+                    logger.error(f"[{self.company_name}] Client error ({http_err.response.status_code}): {http_err}")
+                    raise
+                retries += 1
+                if retries > self.max_retries:
+                    logger.error(
+                        f"[{self.company_name}] Failed GET {url} after {self.max_retries} attempts: {http_err}"
+                    )
+                    raise
+                logger.warning(
+                    f"[{self.company_name}] Attempt {retries} failed ({http_err}). Retrying in {current_delay}s..."
+                )
+                time.sleep(current_delay)
+                current_delay *= self.backoff_factor
 
             except (requests.RequestException, ValueError) as exc:
                 retries += 1

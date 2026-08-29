@@ -72,8 +72,8 @@ class TestIngestionPipeline(unittest.TestCase):
         # 2. Existing postings queried
         self.mock_db.get_postings_for_company.assert_called_once_with(10)
 
-        # 3. New postings inserted
-        self.mock_db.insert_new_postings.assert_called_once_with(10, extracted)
+        # 3. New postings inserted with relevance flags
+        self.mock_db.insert_new_postings.assert_called_once_with(10, extracted, relevant_flags=[True, True])
 
         # 4. Company last checked updated
         self.mock_db.update_company_last_checked.assert_called_once_with(10)
@@ -82,6 +82,7 @@ class TestIngestionPipeline(unittest.TestCase):
         self.assertEqual(result.company_id, 10)
         self.assertEqual(result.snapshot_id, 501)
         self.assertEqual(result.new_count, 2)
+        self.assertEqual(result.relevant_count, 2)
         self.assertEqual(result.updated_count, 0)
         self.assertEqual(result.unchanged_count, 0)
         self.assertEqual(result.closed_count, 0)
@@ -142,6 +143,48 @@ class TestIngestionPipeline(unittest.TestCase):
         self.assertEqual(result.unchanged_count, 1)
         self.assertEqual(result.closed_count, 0)
 
+    def test_pipeline_closure_handling(self):
+        """Verify pipeline marks removed postings as closed in database."""
+        existing_db_postings = [
+            Posting(
+                id=1,
+                company_id=10,
+                external_id="1",
+                title="SWE Intern - Backend",
+                team="Payments",
+                url="https://stripe.com/jobs/1",
+            ),
+            Posting(
+                id=2,
+                company_id=10,
+                external_id="closed-999",
+                title="Old Closed Role",
+                team="Legacy",
+                url="https://stripe.com/jobs/999",
+            ),
+        ]
+        self.mock_db.get_postings_for_company.return_value = existing_db_postings
+        self.mock_db.mark_postings_closed.return_value = 1
+
+        mock_payload = {"jobs": [{"id": 1}]}
+        extracted = [
+            ExtractedPosting(
+                external_id="1",
+                title="SWE Intern - Backend",
+                url="https://stripe.com/jobs/1",
+                team="Payments",
+            )
+        ]
+        mock_adapter = MockAdapter(mock_payload, extracted)
+
+        result = self.pipeline.run_for_company(self.company, adapter=mock_adapter)
+
+        # Closed posting marked in DB
+        self.mock_db.mark_postings_closed.assert_called_once_with(10, ["closed-999"])
+        self.assertEqual(result.closed_count, 1)
+        self.assertEqual(result.unchanged_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -26,7 +26,7 @@ class Posting(BaseModel):
     first_seen_at: Optional[datetime] = None
     last_seen_at: Optional[datetime] = None
     raw_json: Optional[Dict[str, Any]] = None
-    status: str = "new"  # new | reviewed | applied | ignored
+    status: str = "new"  # new | reviewed | applied | ignored | closed
     relevant: Optional[bool] = None
     notified_at: Optional[datetime] = None
     created_at: Optional[datetime] = None

@@ -11,6 +11,8 @@ from src.adapters.models import ExtractedPosting
 from src.adapters.registry import get_adapter
 from src.diff.diff_engine import DiffEngine, DiffResult
 
+from src.classifier.relevance import classify_posting
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,7 @@ class IngestionResult(BaseModel):
     company_name: str
     snapshot_id: int
     new_count: int
+    relevant_count: int
     updated_count: int
     unchanged_count: int
     closed_count: int
@@ -44,8 +47,11 @@ class IngestionPipeline:
         2. Persists immutable raw payload in `snapshots` table.
         3. Parses job postings from raw payload.
         4. Diffs against existing postings in `postings` table.
-        5. Inserts new postings (status='new') and touches existing active ones.
-        6. Updates `companies.last_checked_at`.
+        5. Classifies role relevance (SWE/Infra) for genuinely new postings.
+        6. Inserts new postings with relevance tags.
+        7. Silently updates modified active postings.
+        8. Marks closed postings as status='closed'.
+        9. Updates `companies.last_checked_at`.
 
         Args:
             company: Company name, ID, database model, or config entry.
@@ -76,19 +82,40 @@ class IngestionPipeline:
         existing_postings = self.db.get_postings_for_company(company_record.id)
         diff_res = DiffEngine.diff(existing_postings, extracted_postings)
 
-        # Step 4: Persist diff changes
+        # Step 4: Persist diff changes with relevance classification
+        relevant_count = 0
         if diff_res.new_postings:
-            inserted_ids = self.db.insert_new_postings(company_record.id, diff_res.new_postings)
-            logger.info(f"[{company_record.name}] Inserted {len(inserted_ids)} genuinely new postings")
+            catalog = load_companies_config()
+            cfg = catalog.get_company_by_name(company_record.name)
+            role_filter = cfg.role_filter if cfg else []
+
+            relevant_flags: List[bool] = []
+            for p in diff_res.new_postings:
+                cls_res = classify_posting(p, role_filter=role_filter)
+                relevant_flags.append(cls_res.relevant)
+                if cls_res.relevant:
+                    relevant_count += 1
+                    logger.info(f"[{company_record.name}] RELEVANT MATCH: '{p.title}' ({cls_res.rationale})")
+
+            inserted_ids = self.db.insert_new_postings(
+                company_record.id, diff_res.new_postings, relevant_flags=relevant_flags
+            )
+            logger.info(
+                f"[{company_record.name}] Inserted {len(inserted_ids)} new postings ({relevant_count} relevant)"
+            )
 
         if diff_res.updated_postings:
             for upd in diff_res.updated_postings:
                 self.db.update_posting(company_record.id, upd)
-            logger.info(f"[{company_record.name}] Updated {len(diff_res.updated_postings)} modified postings")
+            logger.info(f"[{company_record.name}] Updated {len(diff_res.updated_postings)} modified postings (silent DB update)")
 
         if diff_res.unchanged_postings:
             unchanged_ext_ids = [p.external_id for p in diff_res.unchanged_postings]
             self.db.update_postings_last_seen(company_record.id, unchanged_ext_ids)
+
+        if diff_res.closed_external_ids:
+            closed_count = self.db.mark_postings_closed(company_record.id, diff_res.closed_external_ids)
+            logger.info(f"[{company_record.name}] Marked {closed_count} postings as closed")
 
         # Step 5: Update company check timestamp
         self.db.update_company_last_checked(company_record.id)
@@ -98,6 +125,7 @@ class IngestionPipeline:
             company_name=company_record.name,
             snapshot_id=snapshot_id,
             new_count=len(diff_res.new_postings),
+            relevant_count=relevant_count,
             updated_count=len(diff_res.updated_postings),
             unchanged_count=len(diff_res.unchanged_postings),
             closed_count=len(diff_res.closed_external_ids),
@@ -153,7 +181,7 @@ if __name__ == "__main__":
             print("\n--- Ingestion Results ---")
             print(f"• Company: {res.company_name} (ID: {res.company_id})")
             print(f"• Snapshot ID: {res.snapshot_id}")
-            print(f"• Genuinely New: {res.new_count}")
+            print(f"• Genuinely New: {res.new_count} ({res.relevant_count} relevant)")
             print(f"• Updated: {res.updated_count}")
             print(f"• Unchanged (Active): {res.unchanged_count}")
             print(f"• Closed/Missing: {res.closed_count}")

@@ -172,7 +172,9 @@ class DatabaseManager:
                 rows = cur.fetchall()
                 return [Posting(**dict(r)) for r in rows]
 
-    def insert_new_postings(self, company_id: int, postings: List[Any]) -> List[int]:
+    def insert_new_postings(
+        self, company_id: int, postings: List[Any], relevant_flags: Optional[List[bool]] = None
+    ) -> List[int]:
         """Inserts genuinely new postings into the postings table."""
         if not postings:
             return []
@@ -180,15 +182,21 @@ class DatabaseManager:
         inserted_ids: List[int] = []
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                for p in postings:
+                for idx, p in enumerate(postings):
                     raw_json = getattr(p, "raw_json", None) or {}
+                    rel = None
+                    if relevant_flags is not None and idx < len(relevant_flags):
+                        rel = relevant_flags[idx]
+                    elif hasattr(p, "relevant") and p.relevant is not None:
+                        rel = p.relevant
+
                     cur.execute(
                         """
                         INSERT INTO postings (
                             company_id, external_id, title, team, deadline, url,
                             raw_json, status, relevant, notified_at, first_seen_at, last_seen_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'new', NULL, NULL, NOW(), NOW())
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'new', %s, NULL, NOW(), NOW())
                         ON CONFLICT (company_id, external_id) DO NOTHING
                         RETURNING id;
                         """,
@@ -200,6 +208,7 @@ class DatabaseManager:
                             p.deadline,
                             p.url,
                             Json(raw_json),
+                            rel,
                         ),
                     )
                     row = cur.fetchone()
@@ -254,6 +263,28 @@ class DatabaseManager:
                     ),
                 )
             conn.commit()
+
+    def mark_postings_closed(self, company_id: int, external_ids: List[str]) -> int:
+        """Marks postings as closed when removed from latest ATS scrape."""
+        if not external_ids:
+            return 0
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET status = 'closed',
+                        updated_at = NOW()
+                    WHERE company_id = %s 
+                      AND external_id = ANY(%s)
+                      AND status IN ('new', 'reviewed');
+                    """,
+                    (company_id, external_ids),
+                )
+                affected = cur.rowcount
+            conn.commit()
+        return affected
 
     def update_company_last_checked(self, company_id: int) -> None:
         """Updates last_checked_at timestamp for a company."""

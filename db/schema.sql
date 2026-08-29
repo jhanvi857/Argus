@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS postings (
     first_seen_at TIMESTAMPTZ DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ DEFAULT NOW(),
     raw_json JSONB,
-    status VARCHAR(50) DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'applied', 'ignored')),
+    status VARCHAR(50) DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'applied', 'ignored', 'closed')),
     relevant BOOLEAN DEFAULT NULL, -- NULL = unclassified, TRUE = relevant, FALSE = irrelevant
     notified_at TIMESTAMPTZ DEFAULT NULL, -- NULL until email sent, prevents duplicate alerts
     created_at TIMESTAMPTZ DEFAULT NOW(),
