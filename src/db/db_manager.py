@@ -126,6 +126,146 @@ class DatabaseManager:
                 row = cur.fetchone()
                 return Company(**dict(row)) if row else None
 
+    def get_company_by_id(self, company_id: int) -> Optional[Company]:
+        """Retrieves a single company by database ID."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM companies WHERE id = %s;", (company_id,))
+                row = cur.fetchone()
+                return Company(**dict(row)) if row else None
+
+    def create_snapshot(self, company_id: int, raw_payload: Dict[str, Any]) -> int:
+        """Stores a raw scrape payload snapshot for a company."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO snapshots (company_id, raw_payload, fetched_at)
+                    VALUES (%s, %s, NOW())
+                    RETURNING id;
+                    """,
+                    (company_id, Json(raw_payload)),
+                )
+                snapshot_id = cur.fetchone()[0]
+            conn.commit()
+        return snapshot_id
+
+    def get_latest_snapshot(self, company_id: int) -> Optional[Snapshot]:
+        """Retrieves the most recent snapshot for a company."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM snapshots WHERE company_id = %s ORDER BY fetched_at DESC LIMIT 1;",
+                    (company_id,),
+                )
+                row = cur.fetchone()
+                return Snapshot(**dict(row)) if row else None
+
+    def get_postings_for_company(self, company_id: int) -> List[Posting]:
+        """Retrieves all stored postings for a company."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM postings WHERE company_id = %s ORDER BY first_seen_at DESC;",
+                    (company_id,),
+                )
+                rows = cur.fetchall()
+                return [Posting(**dict(r)) for r in rows]
+
+    def insert_new_postings(self, company_id: int, postings: List[Any]) -> List[int]:
+        """Inserts genuinely new postings into the postings table."""
+        if not postings:
+            return []
+
+        inserted_ids: List[int] = []
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                for p in postings:
+                    raw_json = getattr(p, "raw_json", None) or {}
+                    cur.execute(
+                        """
+                        INSERT INTO postings (
+                            company_id, external_id, title, team, deadline, url,
+                            raw_json, status, relevant, notified_at, first_seen_at, last_seen_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'new', NULL, NULL, NOW(), NOW())
+                        ON CONFLICT (company_id, external_id) DO NOTHING
+                        RETURNING id;
+                        """,
+                        (
+                            company_id,
+                            p.external_id,
+                            p.title,
+                            p.team,
+                            p.deadline,
+                            p.url,
+                            Json(raw_json),
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        inserted_ids.append(row[0])
+            conn.commit()
+        return inserted_ids
+
+    def update_postings_last_seen(self, company_id: int, external_ids: List[str]) -> None:
+        """Updates last_seen_at timestamp for a batch of existing postings."""
+        if not external_ids:
+            return
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET last_seen_at = NOW(),
+                        updated_at = NOW()
+                    WHERE company_id = %s AND external_id = ANY(%s);
+                    """,
+                    (company_id, external_ids),
+                )
+            conn.commit()
+
+    def update_posting(self, company_id: int, posting: Any) -> None:
+        """Updates title, team, url, and raw_json for an updated posting."""
+        raw_json = getattr(posting, "raw_json", None) or {}
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET title = %s,
+                        team = %s,
+                        url = %s,
+                        deadline = %s,
+                        raw_json = %s,
+                        last_seen_at = NOW(),
+                        updated_at = NOW()
+                    WHERE company_id = %s AND external_id = %s;
+                    """,
+                    (
+                        posting.title,
+                        posting.team,
+                        posting.url,
+                        posting.deadline,
+                        Json(raw_json),
+                        company_id,
+                        posting.external_id,
+                    ),
+                )
+            conn.commit()
+
+    def update_company_last_checked(self, company_id: int) -> None:
+        """Updates last_checked_at timestamp for a company."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE companies SET last_checked_at = NOW(), updated_at = NOW() WHERE id = %s;",
+                    (company_id,),
+                )
+            conn.commit()
+
+
 
 if __name__ == "__main__":
     import argparse
