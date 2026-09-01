@@ -1,0 +1,81 @@
+services:
+  # ============================================================================
+  # PostgreSQL Database - Source of Truth for Postings, Projects & Matches
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: argus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-argus}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/seed_projects.sql:/docker-entrypoint-initdb.d/02_seed_projects.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-argus}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - argus-network
+
+  # ============================================================================
+  # Argus FastAPI Ingestion Trigger API
+  # ============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: argus-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-argus}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-argus}
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - argus-network
+
+  # ============================================================================
+  # n8n Automation & Cron Orchestrator
+  # ============================================================================
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: argus-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Asia/Kolkata
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/data/n8n_workflows
+    depends_on:
+      - postgres
+      - app
+    networks:
+      - argus-network
+
+networks:
+  argus-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  n8n_data:
+    driver: local

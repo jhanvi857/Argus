@@ -1,0 +1,219 @@
+{
+  "name": "Argus — Job Ingestion & Email Digest Notification Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/run-ingestion",
+        "options": {}
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a002",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    p.id, \n    p.title, \n    p.team, \n    p.url, \n    p.deadline, \n    p.first_seen_at, \n    c.name AS company_name, \n    c.ats_type \nFROM postings p \nJOIN companies c ON p.company_id = c.id \nWHERE p.relevant = true \n  AND p.notified_at IS NULL \n  AND p.status != 'closed' \nORDER BY p.first_seen_at ASC;"
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a003",
+      "name": "PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "argus_postgres_credentials",
+          "name": "Argus PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a004",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const postings = $input.all().map(item => item.json);\n\nlet html = `\n<h2>🚀 Argus — New Relevant Job Openings</h2>\n<p>Found ${postings.length} new relevant opportunities.</p>\n`;\n\nfor (const job of postings) {\n  html += `\n    <div style=\"\n      border:1px solid #ddd;\n      border-radius:8px;\n      padding:16px;\n      margin:12px 0;\n    \">\n      <h3>${job.title}</h3>\n\n      <p>\n        <strong>${job.company_name}</strong>\n      </p>\n\n      <p>\n        Team: ${job.team || \"N/A\"}<br>\n        Deadline: ${job.deadline || \"N/A\"}\n      </p>\n\n      <a href=\"${job.url}\">\n        View Official Job Posting →\n      </a>\n    </div>\n  `;\n}\n\nreturn [\n  {\n    json: {\n      html,\n      posting_ids: postings.map(job => job.id),\n      count: postings.length\n    }\n  }\n];"
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a005",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_EMAIL_FROM || $env.SMTP_USER }}",
+        "toEmail": "={{ $env.NOTIFICATION_EMAIL_TO }}",
+        "subject": "=Argus: {{ $json.count }} New Relevant Job Openings",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a006",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        280
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "argus_smtp_credentials",
+          "name": "Argus SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE postings\nSET notified_at = NOW()\nWHERE id = ANY(\n    ARRAY[{{ $json.posting_ids.join(',') }}]::integer[]\n);"
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a007",
+      "name": "Postgres — Mark Notified",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1540,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "argus_postgres_credentials",
+          "name": "Argus PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Postgres — Mark Notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
