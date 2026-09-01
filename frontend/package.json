@@ -1,0 +1,28 @@
+{
+  "name": "argus-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "theme": "node scripts/apply-theme.mjs",
+    "theme:watch": "node scripts/apply-theme.mjs --watch",
+    "theme:dev": "node scripts/apply-theme.mjs --dev",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^1.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "browserslist": "^4.28.8",
+    "caniuse-lite": "^1.0.30001810",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}

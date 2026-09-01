@@ -1,0 +1,31 @@
+{
+  "primary": "#ad2831",
+  "primaryDark": "#800e13",
+  "primaryLight": "#c1121f",
+  "primarySurface": "#fefae0",
+
+  "cream": "#fefae0",
+  "creamLight": "#fffdf0",
+  "creamBorder": "#ece3b4",
+  "creamDark": "#f6edc3",
+  "appBackground": "#fefae0",
+
+  "gray25": "#ffffff",
+  "gray50": "#ffffff",
+  "gray100": "#f7f7f2",
+  "gray150": "#eeeee6",
+  "gray200": "#e2e2d8",
+  "gray300": "#cfcfc4",
+  "gray400": "#a9a99d",
+  "gray500": "#7e7e72",
+  "gray600": "#5d5d52",
+  "gray700": "#3f3f37",
+  "gray800": "#282821",
+  "gray900": "#151510",
+
+  "success": "#386641",
+  "successBg": "#eef6ef",
+  "successBorder": "#cbe3ce",
+  "warning": "#bc6c25",
+  "warningBg": "#fdf6ec"
+}
