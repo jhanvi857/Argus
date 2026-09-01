@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS applications (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Users Table: Candidate account & recipient profile configuration
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes for performance & query optimization
 CREATE INDEX IF NOT EXISTS idx_postings_company_id ON postings(company_id);
 CREATE INDEX IF NOT EXISTS idx_postings_status ON postings(status);

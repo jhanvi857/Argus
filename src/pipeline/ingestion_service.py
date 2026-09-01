@@ -161,6 +161,48 @@ class IngestionPipeline:
         raise ValueError(f"Company '{name}' could not be resolved from DB or config")
 
 
+def run_all(pipeline: Optional[IngestionPipeline] = None) -> List[Dict[str, Any]]:
+    """Executes the ingestion pipeline across all companies configured in companies.yaml.
+
+    Returns:
+        List of summary dicts containing per-company ingestion results.
+    """
+    pipe = pipeline or IngestionPipeline()
+    catalog = load_companies_config()
+    results: List[Dict[str, Any]] = []
+
+    logger.info(f"Starting batch ingestion for {catalog.total_count} companies...")
+    for comp in catalog.get_all_companies():
+        try:
+            res = pipe.run_for_company(comp)
+            results.append(
+                {
+                    "company": comp.name,
+                    "status": "success",
+                    "new_postings": res.new_count,
+                    "relevant_postings": res.relevant_count,
+                    "updated_postings": res.updated_count,
+                    "active_postings": res.unchanged_count,
+                    "closed_postings": res.closed_count,
+                    "snapshot_id": res.snapshot_id,
+                }
+            )
+            logger.info(
+                f"[{comp.name}] Finished -> New: {res.new_count} ({res.relevant_count} relevant), Active: {res.unchanged_count}"
+            )
+        except Exception as ex:
+            logger.error(f"[{comp.name}] Ingestion failed: {ex}", exc_info=True)
+            results.append(
+                {
+                    "company": comp.name,
+                    "status": "failed",
+                    "error": str(ex),
+                }
+            )
+
+    return results
+
+
 if __name__ == "__main__":
     import argparse
     import sys
@@ -186,18 +228,16 @@ if __name__ == "__main__":
             print(f"• Unchanged (Active): {res.unchanged_count}")
             print(f"• Closed/Missing: {res.closed_count}")
         elif args.all:
-            catalog = load_companies_config()
-            print(f"Starting batch ingestion for {catalog.total_count} companies...")
-            for comp in catalog.get_all_companies():
-                try:
-                    res = pipeline.run_for_company(comp)
-                    print(f"[{comp.name}] Done -> New: {res.new_count}, Active: {res.unchanged_count}")
-                except Exception as ex:
-                    print(f"[{comp.name}] Skipped / Failed: {ex}", file=sys.stderr)
+            results = run_all(pipeline)
+            success_count = sum(1 for r in results if r.get("status") == "success")
+            print(f"\nCompleted batch ingestion: {success_count}/{len(results)} companies succeeded.")
         else:
             parser.print_help()
+            sys.exit(0)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
 

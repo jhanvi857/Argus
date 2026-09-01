@@ -297,6 +297,86 @@ class DatabaseManager:
             conn.commit()
 
 
+    def get_unnotified_relevant_postings(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Retrieves all relevant, unnotified postings joined with company details."""
+        query = """
+            SELECT 
+                p.id,
+                p.company_id,
+                p.external_id,
+                p.title,
+                p.team,
+                p.deadline,
+                p.url,
+                p.first_seen_at,
+                p.last_seen_at,
+                p.raw_json,
+                p.status,
+                p.relevant,
+                p.notified_at,
+                c.name AS company_name,
+                c.ats_type,
+                c.careers_page_url
+            FROM postings p
+            JOIN companies c ON p.company_id = c.id
+            WHERE p.relevant = TRUE 
+              AND p.notified_at IS NULL 
+              AND p.status != 'closed'
+            ORDER BY p.first_seen_at ASC
+        """
+        params = []
+        if limit and limit > 0:
+            query += " LIMIT %s"
+            params.append(limit)
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                return [dict(r) for r in rows]
+
+    def mark_postings_notified(self, posting_ids: List[int]) -> int:
+        """Marks a batch of posting IDs as notified (setting notified_at = NOW())."""
+        if not posting_ids:
+            return 0
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET notified_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = ANY(%s) AND notified_at IS NULL;
+                    """,
+                    (posting_ids,),
+                )
+                affected = cur.rowcount
+            conn.commit()
+        return affected
+
+    def get_notification_stats(self) -> Dict[str, int]:
+        """Returns aggregate metrics on postings, relevance, and notification status."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 
+                        COUNT(*) AS total_postings,
+                        COUNT(*) FILTER (WHERE relevant = TRUE) AS relevant_postings,
+                        COUNT(*) FILTER (WHERE relevant = TRUE AND notified_at IS NOT NULL) AS notified_postings,
+                        COUNT(*) FILTER (WHERE relevant = TRUE AND notified_at IS NULL AND status != 'closed') AS pending_notifications
+                    FROM postings;
+                    """
+                )
+                row = cur.fetchone()
+                return {
+                    "total_postings": row[0] or 0,
+                    "relevant_postings": row[1] or 0,
+                    "notified_postings": row[2] or 0,
+                    "pending_notifications": row[3] or 0,
+                }
+
 
 if __name__ == "__main__":
     import argparse
