@@ -235,18 +235,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <p style={{ fontSize: '13.5px', color: 'var(--gray-500)', maxWidth: '380px', margin: '0 auto 20px', lineHeight: 1.5 }}>
                 Argus monitors official company career pages. When new postings matching your criteria appear, they will show up here.
               </p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '6px' }}>
                 <button
-                  className="btn-primary btn-sm"
+                  className="btn btn-primary"
                   onClick={() => onNavigate('preferences')}
-                  style={{ borderRadius: 'var(--border-radius-full)' }}
+                  style={{ borderRadius: 'var(--border-radius-full)', padding: '11px 24px', fontSize: '14.5px' }}
                 >
                   Configure Target Companies
                 </button>
                 <button
-                  className="btn-secondary btn-sm"
+                  className="btn btn-secondary"
                   onClick={() => onNavigate('opportunities')}
-                  style={{ borderRadius: 'var(--border-radius-full)' }}
+                  style={{ borderRadius: 'var(--border-radius-full)', padding: '11px 24px', fontSize: '14.5px' }}
                 >
                   Browse All Jobs
                 </button>

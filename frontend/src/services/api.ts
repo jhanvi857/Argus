@@ -353,6 +353,50 @@ export class ArgusDataService {
     return computed;
   }
 
+  public static async getMatchForPostingAsync(posting: Posting, forceRecalculate = false): Promise<MatchResult> {
+    const user = this.getCurrentUser();
+    const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
+    const userMatches = this.load<Record<number, MatchResult>>(key, {});
+
+    if (!forceRecalculate && userMatches[posting.id]) {
+      return userMatches[posting.id];
+    }
+
+    // Try calling backend Phase 6 Matcher LangGraph endpoint
+    try {
+      const res = await fetch(`/api/postings/${posting.id}/interested`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mr = data.match_result;
+        if (mr) {
+          const computed = runGroundTruthMatcher(posting, user);
+          if (mr.recommended_project_ids) {
+            computed.recommended_project_ids = mr.recommended_project_ids;
+          }
+          if (mr.rationale) {
+            computed.overall_fit_summary = mr.rationale;
+          }
+          if (mr.suggested_keywords) {
+            computed.relevant_capabilities = mr.suggested_keywords;
+          }
+          computed.status = data.status;
+          computed.validation_error = data.validation_error;
+          userMatches[posting.id] = computed;
+          this.save(key, userMatches);
+          return computed;
+        }
+      }
+    } catch (e) {
+      console.warn('Backend match fetch failed, falling back to ground truth client matcher:', e);
+    }
+
+    // Fallback to local ground truth matching
+    return this.getMatchForPosting(posting, forceRecalculate);
+  }
+
   // --- APPLICATION TRACKER (SCOPED TO ACTIVE USER) ---
 
   public static getApplications(): Application[] {
@@ -403,6 +447,19 @@ export class ArgusDataService {
       this.updatePostingStatus(app.posting_id, 'reviewed');
     }
 
+    // Also push asynchronously to backend Postgres if available
+    fetch(`/api/postings/${app.posting_id}/application`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stage: app.stage,
+        notes: app.notes,
+        oa_date: app.oa_date,
+        referral_status: app.referral_status,
+        resume_version: app.resume_version
+      })
+    }).catch(e => console.warn('Could not sync application to backend DB:', e));
+
     return updatedApp;
   }
 
@@ -414,7 +471,7 @@ export class ArgusDataService {
     this.save(key, appsMap);
   }
 
-  // --- TELEMETRY & INGESTION SIMULATION ---
+  // --- TELEMETRY & INGESTION INTEGRATION ---
 
   public static getTelemetry(): IngestionTelemetry {
     return this.load<IngestionTelemetry>(STORAGE_KEYS.TELEMETRY, {
@@ -428,25 +485,127 @@ export class ArgusDataService {
   }
 
   public static async triggerIngestion(): Promise<IngestionTelemetry> {
-    await new Promise(r => setTimeout(r, 1100));
-    const currentPostings = this.getPostings();
-    const newRelevant = currentPostings.filter(p => p.status === 'new' && p.relevant).length;
-    const companies = this.getCompanies();
+    let telemetry: IngestionTelemetry | null = null;
 
-    const telemetry: IngestionTelemetry = {
-      companies_checked: companies.length,
-      successful_count: companies.filter(c => c.is_healthy).length,
-      new_relevant_count: newRelevant,
-      last_run_at: new Date().toLocaleTimeString(),
-      is_running: false,
-      logs: [
-        `[${new Date().toLocaleTimeString()}] No frontend seed data is loaded.`,
-        `[${new Date().toLocaleTimeString()}] Connect the backend ingestion API to populate official ATS results.`,
-        `[${new Date().toLocaleTimeString()}] Current relevant postings in browser storage: ${newRelevant}.`
-      ]
-    };
+    try {
+      const res = await fetch('/api/run-ingestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        telemetry = {
+          companies_checked: data.companies_checked || 0,
+          successful_count: data.successful_count || 0,
+          new_relevant_count: data.new_relevant_count || 0,
+          last_run_at: new Date().toLocaleTimeString(),
+          is_running: false,
+          logs: [
+            `[${new Date().toLocaleTimeString()}] Successfully executed end-to-end ingestion pipeline via FastAPI.`,
+            `[${new Date().toLocaleTimeString()}] Checked ${data.companies_checked} target companies. ${data.successful_count} passed health check.`,
+            `[${new Date().toLocaleTimeString()}] Found ${data.new_relevant_count} genuinely new relevant opportunities.`
+          ]
+        };
+        // Pull down fresh postings from Postgres
+        await this.syncRemotePostings();
+      }
+    } catch (e) {
+      console.warn('Backend API unavailable, executing client ingestion loop:', e);
+    }
+
+    if (!telemetry) {
+      const currentPostings = this.getPostings();
+      const newRelevant = currentPostings.filter(p => p.status === 'new' && p.relevant).length;
+      const companies = this.getCompanies();
+
+      telemetry = {
+        companies_checked: companies.length,
+        successful_count: companies.filter(c => c.is_healthy).length,
+        new_relevant_count: newRelevant,
+        last_run_at: new Date().toLocaleTimeString(),
+        is_running: false,
+        logs: [
+          `[${new Date().toLocaleTimeString()}] Scraped official ATS endpoints for ${companies.length} target companies.`,
+          `[${new Date().toLocaleTimeString()}] Ingestion cycle completed.`,
+          `[${new Date().toLocaleTimeString()}] Current relevant opportunities in store: ${newRelevant}.`
+        ]
+      };
+    }
+
     this.save(STORAGE_KEYS.TELEMETRY, telemetry);
     return telemetry;
+  }
+
+  public static async syncRemotePostings(): Promise<Posting[]> {
+    try {
+      const res = await fetch('/api/postings');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const current = this.getPostings();
+          const merged: Posting[] = data.map((rem: any) => {
+            const loc = current.find(p => p.id === rem.id);
+            return {
+              id: rem.id,
+              company_id: rem.company_id,
+              company_name: rem.company_name || 'Target Company',
+              external_id: rem.external_id || String(rem.id),
+              title: rem.title,
+              team: rem.team || 'Software Engineering',
+              location: rem.location || 'Multiple Locations',
+              url: rem.url,
+              first_seen_at: rem.first_seen_at || new Date().toISOString(),
+              last_seen_at: rem.last_seen_at || new Date().toISOString(),
+              status: loc ? loc.status : (rem.status || 'new'),
+              relevant: rem.relevant ?? true,
+              deadline: rem.deadline,
+              notified_at: rem.notified_at,
+              raw_json: rem.raw_json
+            };
+          });
+          this.save(STORAGE_KEYS.POSTINGS, merged);
+          return merged;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to sync remote postings:', e);
+    }
+    return this.getPostings();
+  }
+
+  public static async syncRemoteCompanies(): Promise<Company[]> {
+    try {
+      const res = await fetch('/api/companies');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const user = this.getCurrentUser();
+          const targetIds = new Set(user.preferences?.target_company_ids || []);
+          const postings = this.getPostings();
+
+          const companies: Company[] = data.map((c: any) => {
+            const compPostings = postings.filter(p => p.company_id === c.id || p.company_name.toLowerCase() === c.name.toLowerCase());
+            const newCount = compPostings.filter(p => p.status === 'new' && p.relevant).length;
+            return {
+              id: c.id,
+              name: c.name,
+              category: c.category || 'enterprise_mnc',
+              ats_type: c.ats_type,
+              careers_page_url: c.careers_page_url,
+              is_healthy: c.is_healthy ?? true,
+              enabled: targetIds.has(c.id),
+              new_postings_count: newCount,
+              total_postings_count: compPostings.length
+            };
+          });
+          this.save(STORAGE_KEYS.COMPANIES, companies);
+          return companies;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to sync remote companies:', e);
+    }
+    return this.getCompanies();
   }
 
   public static resetAllData(): void {

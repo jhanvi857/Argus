@@ -52,6 +52,7 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
     all: postings.length,
     new: postings.filter(p => p.status === 'new').length,
     reviewed: postings.filter(p => p.status === 'reviewed').length,
+    needs_review: postings.filter(p => p.status === 'needs_review').length,
     applied: postings.filter(p => p.status === 'applied').length,
     ignored: postings.filter(p => p.status === 'ignored').length
   };
@@ -99,6 +100,7 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
               { id: 'all', label: 'All Postings' },
               { id: 'new', label: 'New', count: statusCounts.new, isNew: true },
               { id: 'reviewed', label: 'Interested', count: statusCounts.reviewed },
+              { id: 'needs_review', label: 'Needs Review', count: statusCounts.needs_review },
               { id: 'applied', label: 'Applied', count: statusCounts.applied },
               { id: 'ignored', label: 'Ignored', count: statusCounts.ignored }
             ].map(tab => (
@@ -232,6 +234,9 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
                       </span>
                       {posting.status === 'reviewed' && (
                         <span className="badge-tag-cream" style={{ fontSize: '10.5px' }}>INTERESTED</span>
+                      )}
+                      {posting.status === 'needs_review' && (
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.4px' }}>NEEDS REVIEW</span>
                       )}
                       {posting.status === 'applied' && (
                         <span className="badge-tag" style={{ fontSize: '10.5px', backgroundColor: 'var(--color-success-bg)', color: 'var(--color-success)', borderColor: 'var(--color-success-border)' }}>APPLIED</span>

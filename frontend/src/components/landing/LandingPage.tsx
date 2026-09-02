@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowRight, 
   Play, 
@@ -14,82 +14,54 @@ import {
   Send, 
   ShieldCheck, 
   Clock, 
-  Lock, 
-  ExternalLink,
-  ChevronRight
+  Lock,
+  LayoutDashboard,
+  Settings,
+  LogOut,
+  ChevronDown
 } from 'lucide-react';
-import { AppRoute } from '../../types';
+import { AppRoute, UserProfile } from '../../types';
+import { AuthService } from '../../services/auth';
 
 interface LandingPageProps {
   onNavigate: (route: AppRoute) => void;
-  onQuickDemoLogin: (userId?: string) => void;
+  currentUser?: UserProfile | null;
+  onLogout?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onNavigate,
-  onQuickDemoLogin
+  currentUser: propUser,
+  onLogout
 }) => {
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const activeUser = propUser || (AuthService.isAuthenticated() ? AuthService.getCurrentUser() : null);
+  const userInitial = activeUser
+    ? (activeUser.full_name || activeUser.email || 'C').charAt(0).toUpperCase()
+    : '';
+
   const [mcpInput, setMcpInput] = useState<string>("What's pending for Goldman Sachs?");
-  const [mcpMessages, setMcpMessages] = useState<Array<{ sender: 'user' | 'argus'; text: string; time: string; structured?: any }>>([
-    {
-      sender: 'user',
-      text: "What's pending for Goldman Sachs?",
-      time: "10:42 AM"
-    },
-    {
-      sender: 'argus',
-      text: "3 relevant opportunities.",
-      time: "10:43 AM",
-      structured: [
-        { role: 'SWE Summer Analyst', status: 'New' },
-        { role: 'Software Engineering Intern', status: 'Interested' },
-        { role: 'Technology Analyst', status: 'Applied' }
-      ]
-    }
-  ]);
 
   const handleMcpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!mcpInput.trim()) return;
-
-    const userQuery = mcpInput;
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setMcpMessages(prev => [...prev, { sender: 'user', text: userQuery, time: now }]);
     setMcpInput('');
-
-    setTimeout(() => {
-      let reply = "3 relevant opportunities.";
-      let structured = null;
-
-      if (userQuery.toLowerCase().includes('citadel') || userQuery.toLowerCase().includes('quant')) {
-        structured = [
-          { role: 'Quant SWE Intern (Low Latency)', status: 'New' },
-          { role: 'Platform Engineer (C++/Linux)', status: 'Interested' }
-        ];
-      } else if (userQuery.toLowerCase().includes('stripe')) {
-        structured = [
-          { role: 'Backend Developer Intern', status: 'Interested' },
-          { role: 'Infrastructure Engineer New Grad', status: 'Applied' }
-        ];
-      } else {
-        structured = [
-          { role: 'SWE Summer Analyst', status: 'New' },
-          { role: 'Software Engineering Intern', status: 'Interested' },
-          { role: 'Technology Analyst', status: 'Applied' }
-        ];
-      }
-
-      setMcpMessages(prev => [...prev, { 
-        sender: 'argus', 
-        text: reply, 
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
-        structured 
-      }]);
-    }, 500);
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', color: '#1a1a16', minHeight: '100vh', fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ backgroundColor: '#FAF7F2', color: '#1a1a16', minHeight: '100vh', fontFamily: "'Inter', sans-serif" }}>
       {/* 1. Top Navigation Bar */}
       <nav style={{
         maxWidth: '1240px',
@@ -112,7 +84,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         >
           <span style={{ 
             fontFamily: "'Newsreader', 'Lora', serif", 
-            fontSize: '30px', 
+            fontSize: '32px', 
             fontWeight: 700, 
             color: '#ad2831',
             letterSpacing: '-0.5px'
@@ -129,47 +101,215 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <a href="#features" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
             Features
           </a>
-          <a href="#how-it-works" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
-            How it works
+          <a href="#pricing" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
+            Pricing
           </a>
-          <a href="#mcp" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
-            MCP Server
+          <a href="#about" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
+            About
           </a>
         </div>
 
         {/* Right CTA / Auth */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <button 
-            onClick={() => onNavigate('login')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#33332d',
-              fontSize: '14.5px',
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
-            Log In
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {activeUser ? (
+            <div style={{ position: 'relative' }} ref={dropdownRef}>
+              <button
+                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 8px',
+                  borderRadius: '9999px',
+                  border: '1px solid #ede8de',
+                  backgroundColor: '#ffffff',
+                  cursor: 'pointer',
+                  boxShadow: userDropdownOpen ? '0 0 0 2px rgba(173, 40, 49, 0.25)' : '0 1px 3px rgba(0,0,0,0.04)',
+                  transition: 'all 0.15s ease'
+                }}
+                aria-expanded={userDropdownOpen}
+                aria-label="User menu"
+              >
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#ad2831',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  fontFamily: "'Inter', sans-serif"
+                }}>
+                  {userInitial}
+                </div>
+                <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#1a1a16' }}>
+                  {activeUser.full_name || activeUser.email.split('@')[0]}
+                </span>
+                <ChevronDown
+                  size={15}
+                  color="#737367"
+                  style={{
+                    transform: userDropdownOpen ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.2s ease'
+                  }}
+                />
+              </button>
 
-          <button 
-            onClick={() => onNavigate('signup')}
-            style={{
-              backgroundColor: '#ad2831',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '9999px',
-              padding: '9px 22px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(173, 40, 49, 0.25)',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            Get Started
-          </button>
+              {/* Dropdown Menu */}
+              {userDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '240px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #ede8de',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 28px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
+                  padding: '8px',
+                  zIndex: 1000
+                }}>
+                  <div style={{
+                    padding: '10px 12px',
+                    borderBottom: '1px solid #f2ede4',
+                    marginBottom: '6px'
+                  }}>
+                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#1a1a16' }}>
+                      {activeUser.full_name || 'Candidate'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#737367', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeUser.email}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      onNavigate('dashboard');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '6px',
+                      color: '#1a1a16',
+                      fontSize: '13.5px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#faf6ee')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <LayoutDashboard size={16} color="#ad2831" />
+                    <span>Dashboard</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      onNavigate('settings');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '6px',
+                      color: '#1a1a16',
+                      fontSize: '13.5px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#faf6ee')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <Settings size={16} color="#55554b" />
+                    <span>Settings</span>
+                  </button>
+
+                  <div style={{ height: '1px', backgroundColor: '#f2ede4', margin: '6px 0' }} />
+
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      if (onLogout) {
+                        onLogout();
+                      } else {
+                        AuthService.logout();
+                        onNavigate('landing');
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '6px',
+                      color: '#ad2831',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(173, 40, 49, 0.08)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <LogOut size={16} color="#ad2831" />
+                    <span>Log out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <button 
+                onClick={() => onNavigate('login')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#33332d',
+                  fontSize: '14.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Log In
+              </button>
+
+              <button 
+                onClick={() => onNavigate('signup')}
+                style={{
+                  backgroundColor: '#ad2831',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '9999px',
+                  padding: '9px 22px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(173, 40, 49, 0.25)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Get Started
+              </button>
+            </>
+          )}
         </div>
       </nav>
 
@@ -222,7 +362,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* CTA Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => onNavigate('signup')}
+              onClick={() => onNavigate(activeUser ? 'dashboard' : 'signup')}
               style={{
                 backgroundColor: '#ad2831',
                 color: '#ffffff',
@@ -238,7 +378,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 gap: '8px'
               }}
             >
-              <span>Get Started Free</span>
+              <span>{activeUser ? 'Go to Dashboard' : 'Get Started Free'}</span>
+              <ArrowRight size={16} />
             </button>
 
             <a
@@ -1182,7 +1323,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </p>
 
             <button
-              onClick={() => onNavigate('signup')}
+              onClick={() => onNavigate(activeUser ? 'dashboard' : 'signup')}
               style={{
                 backgroundColor: '#ad2831',
                 color: '#ffffff',
@@ -1199,7 +1340,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 marginBottom: '24px'
               }}
             >
-              <span>Start tracking jobs</span>
+              <span>{activeUser ? 'Go to Dashboard' : 'Start tracking jobs'}</span>
               <ArrowRight size={16} />
             </button>
 
@@ -1257,11 +1398,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 The official career ATS vigilance monitor & JD-to-portfolio matcher for software engineers.
               </p>
               <button 
-                onClick={() => onQuickDemoLogin()}
+                onClick={() => onNavigate('login')}
                 className="btn-secondary btn-sm"
                 style={{ fontSize: '11.5px', padding: '6px 12px' }}
               >
-                Instant Demo Access →
+                Sign In to Platform →
               </button>
             </div>
 

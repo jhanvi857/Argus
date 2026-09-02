@@ -34,8 +34,8 @@ export const App: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('landing');
 
   // Multi-User State
-  const [currentUser, setCurrentUser] = useState<UserProfile>(AuthService.getCurrentUser());
-  const [allUsers, setAllUsers] = useState<UserProfile[]>(AuthService.getAllUsers());
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(AuthService.getCurrentUser());
+  const [allUsers, setAllUsers] = useState<UserProfile[]>(AuthService.getVerifiedUsers());
 
   // Data State
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -56,7 +56,7 @@ export const App: React.FC = () => {
   const refreshData = useCallback(() => {
     const user = AuthService.getCurrentUser();
     setCurrentUser(user);
-    setAllUsers(AuthService.getAllUsers());
+    setAllUsers(AuthService.getVerifiedUsers());
     setCompanies(ArgusDataService.getCompanies());
     setPostings(ArgusDataService.getPostings());
     setApplications(ArgusDataService.getApplications());
@@ -114,17 +114,10 @@ export const App: React.FC = () => {
 
   const handleCreateNewUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim() || !newUserEmail.trim()) return;
-    const user = AuthService.signup({
-      full_name: newUserName.trim(),
-      email: newUserEmail.trim()
-    });
     setNewUserModalOpen(false);
     setNewUserName('');
     setNewUserEmail('');
-    setCurrentUser(user);
-    refreshData();
-    setCurrentRoute('onboarding');
+    handleNavigate('login');
   };
 
   // Keyboard Shortcuts (j/k navigation, i for matcher, a for applied, o for ATS link)
@@ -175,15 +168,25 @@ export const App: React.FC = () => {
     return (
       <LandingPage
         onNavigate={handleNavigate}
-        onQuickDemoLogin={(userId) => {
-          if (userId) AuthService.switchUser(userId);
-          handleNavigate('dashboard');
+        currentUser={currentUser}
+        onLogout={() => {
+          AuthService.logout();
+          setCurrentUser(null);
+          refreshData();
         }}
       />
     );
   }
 
-  if (currentRoute === 'login') {
+  if (currentRoute === 'signup') {
+    return (
+      <SignupPage
+        onNavigate={handleNavigate}
+      />
+    );
+  }
+
+  if (currentRoute === 'login' || !currentUser) {
     return (
       <LoginPage
         onNavigate={handleNavigate}
@@ -195,20 +198,6 @@ export const App: React.FC = () => {
           } else {
             handleNavigate('dashboard');
           }
-        }}
-        allUsers={allUsers}
-      />
-    );
-  }
-
-  if (currentRoute === 'signup') {
-    return (
-      <SignupPage
-        onNavigate={handleNavigate}
-        onSignupSuccess={(user) => {
-          setCurrentUser(user);
-          refreshData();
-          handleNavigate('onboarding');
         }}
       />
     );

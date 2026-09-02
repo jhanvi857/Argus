@@ -1,6 +1,27 @@
-export type ATSType = 'greenhouse' | 'lever' | 'workday' | 'custom' | 'verify' | 'eightfold';
+export type ATSType = 
+  | 'greenhouse' 
+  | 'lever' 
+  | 'workday' 
+  | 'custom' 
+  | 'verify' 
+  | 'eightfold'
+  | 'amazon'
+  | 'google'
+  | 'microsoft'
+  | 'goldman';
 
-export type CompanyCategory = 'product_based' | 'banking_and_quant' | 'well_funded_startups';
+export type CompanyCategory = 
+  | 'product_based' 
+  | 'banking_and_quant' 
+  | 'well_funded_startups'
+  | 'faang_maang'
+  | 'quant_and_hft'
+  | 'global_fintech'
+  | 'indian_fintech'
+  | 'indian_product_unicorns'
+  | 'enterprise_mnc'
+  | 'chips_systems_infra'
+  | 'growth_stage_startups';
 
 export interface Company {
   id: number;
@@ -17,7 +38,7 @@ export interface Company {
   enabled?: boolean;
 }
 
-export type PostingStatus = 'new' | 'reviewed' | 'applied' | 'ignored' | 'closed';
+export type PostingStatus = 'new' | 'reviewed' | 'applied' | 'ignored' | 'closed' | 'needs_review';
 
 export interface Posting {
   id: number;
@@ -225,6 +246,8 @@ export interface MatchResult {
   recommended_resume: MatchedResume | null;
   rationale: string;
   suggested_keywords: string[];
+  status?: 'pending' | 'matched' | 'needs_review';
+  validation_error?: string;
   created_at: string;
 }
 

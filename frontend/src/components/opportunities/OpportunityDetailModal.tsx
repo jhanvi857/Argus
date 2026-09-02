@@ -64,7 +64,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
     setMatchStep('Synthesizing ground-truth fit score and recommended evidence...');
     await new Promise(r => setTimeout(r, 150));
 
-    const result = ArgusDataService.getMatchForPosting(posting, true);
+    const result = await ArgusDataService.getMatchForPostingAsync(posting, true);
     setMatchResult(result);
     setIsMatching(false);
   };
@@ -132,7 +132,10 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <button
                       className="btn-primary btn-sm"
-                      onClick={() => onStatusChange(posting.id, 'applied')}
+                      onClick={() => {
+                        onStatusChange(posting.id, 'reviewed');
+                        runMatchComputation();
+                      }}
                       style={{ borderRadius: 'var(--border-radius-full)' }}
                     >
                       Interested
@@ -196,9 +199,21 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
               <div>
                 <div className="card-surface" style={{ padding: '24px', position: 'sticky', top: '0' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)' }}>
-                      AI Match Recommendation
-                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                        AI Match Recommendation
+                      </h3>
+                      {(matchResult?.status === 'needs_review' || posting.status === 'needs_review') && (
+                        <span style={{
+                          fontSize: '11px', fontWeight: 700, color: '#b45309',
+                          background: '#fef3c7', border: '1px solid #fde68a',
+                          padding: '2px 8px', borderRadius: 'var(--border-radius-full)',
+                          textTransform: 'uppercase', letterSpacing: '0.5px'
+                        }}>
+                          Needs Review
+                        </span>
+                      )}
+                    </div>
                     <span style={{
                       fontSize: '10px', fontWeight: 700, color: 'var(--primary)',
                       background: 'rgba(173, 40, 49, 0.1)',
@@ -208,6 +223,21 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                       Beta
                     </span>
                   </div>
+
+                  {(matchResult?.status === 'needs_review' || posting.status === 'needs_review') && (
+                    <div style={{
+                      padding: '10px 14px',
+                      marginBottom: '16px',
+                      borderRadius: 'var(--border-radius-md)',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      fontSize: '12px',
+                      color: '#92400e',
+                      lineHeight: 1.5
+                    }}>
+                      <strong>Validation Flag:</strong> {matchResult?.validation_error || 'Match recommendations flagged for manual confirmation by candidate.'}
+                    </div>
+                  )}
 
                   {isMatching ? (
                     <div style={{ textAlign: 'center', padding: '40px 16px' }}>
