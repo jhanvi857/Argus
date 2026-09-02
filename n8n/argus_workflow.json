@@ -23,6 +23,22 @@
     },
     {
       "parameters": {
+        "httpMethod": "POST",
+        "path": "argus-ingest",
+        "options": {}
+      },
+      "id": "1e3a4798-2a1f-4bb0-8025-a13f0190a008",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        140
+      ],
+      "webhookId": "argus-ingest"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "http://app:8000/run-ingestion",
         "options": {}
@@ -147,6 +163,17 @@
   ],
   "connections": {
     "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
       "main": [
         [
           {
