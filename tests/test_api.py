@@ -52,6 +52,44 @@ class TestIngestionAPI(unittest.TestCase):
         self.assertEqual(len(data["results"]), 2)
         mock_run_all.assert_called_once()
 
+    @patch("src.graphs.matcher_graph.process_match")
+    def test_mark_interested_endpoint(self, mock_process_match):
+        """Verify POST /postings/{id}/interested triggers Matcher LangGraph."""
+        mock_process_match.return_value = {
+            "posting_id": "42",
+            "status": "matched",
+            "match_result": {
+                "recommended_project_ids": ["evora", "nioflow"],
+                "rationale": "High fit.",
+                "suggested_keywords": ["Raft"],
+            },
+            "validation_error": None,
+            "retry_count": 1,
+        }
+        response = self.client.post("/postings/42/interested")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "matched")
+        self.assertEqual(data["posting_id"], 42)
+        self.assertIn("evora", data["match_result"]["recommended_project_ids"])
+
+    @patch("src.db.db_manager.DatabaseManager.get_match_by_posting_id")
+    def test_get_match_endpoint(self, mock_get_match):
+        """Verify GET /postings/{id}/match returns stored match recommendations."""
+        from src.db.models import Match
+        mock_get_match.return_value = Match(
+            id=1,
+            posting_id=42,
+            recommended_project_ids=["nioflow"],
+            rationale="Great systems project.",
+            suggested_keywords=["Netty"],
+        )
+        response = self.client.get("/postings/42/match")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["posting_id"], 42)
+        self.assertEqual(data["recommended_project_ids"], ["nioflow"])
+
 
 if __name__ == "__main__":
     unittest.main()

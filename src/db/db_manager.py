@@ -29,7 +29,7 @@ class DatabaseManager:
 
     def get_connection(self):
         """Creates and returns a connection to PostgreSQL."""
-        return psycopg2.connect(self.database_url)
+        return psycopg2.connect(self.database_url, connect_timeout=3)
 
     def init_schema(self, schema_file: Optional[Path] = None) -> bool:
         """Executes the DDL schema file to create all tables and indexes."""
@@ -296,6 +296,37 @@ class DatabaseManager:
                 )
             conn.commit()
 
+    def find_similar_postings(
+        self, company_id: int, days: int = 30
+    ) -> List[Posting]:
+        """Retrieves recent postings for a company within a time window.
+
+        Used by the dedupe node in the ingestion LangGraph to fuzzy-match
+        new posting titles against existing ones, catching the "same req
+        reworded" problem that exact external_id dedup can't solve.
+
+        Args:
+            company_id: Target company database ID.
+            days: Lookback window in days (default 30).
+
+        Returns:
+            List of Posting records within the time window.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM postings
+                    WHERE company_id = %s
+                      AND first_seen_at >= NOW() - INTERVAL '%s days'
+                      AND status != 'closed'
+                    ORDER BY first_seen_at DESC;
+                    """,
+                    (company_id, days),
+                )
+                rows = cur.fetchall()
+                return [Posting(**dict(r)) for r in rows]
+
 
     def get_unnotified_relevant_postings(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Retrieves all relevant, unnotified postings joined with company details."""
@@ -376,6 +407,207 @@ class DatabaseManager:
                     "notified_postings": row[2] or 0,
                     "pending_notifications": row[3] or 0,
                 }
+
+    def get_posting_by_id(self, posting_id: int) -> Optional[Posting]:
+        """Retrieves a single posting by its primary key ID."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM postings WHERE id = %s;", (posting_id,))
+                row = cur.fetchone()
+                return Posting(**dict(row)) if row else None
+
+    def save_match(
+        self,
+        posting_id: int,
+        recommended_project_ids: List[str],
+        rationale: str,
+        suggested_keywords: Optional[List[str]] = None,
+    ) -> int:
+        """Stores a portfolio match result for a posting into the matches table."""
+        keywords = suggested_keywords or []
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO matches (posting_id, recommended_project_ids, rationale, suggested_keywords, created_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    RETURNING id;
+                    """,
+                    (posting_id, recommended_project_ids, rationale, keywords),
+                )
+                match_id = cur.fetchone()[0]
+            conn.commit()
+        return match_id
+
+    def get_match_by_posting_id(self, posting_id: int) -> Optional[Match]:
+        """Retrieves the latest portfolio match result for a posting."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM matches WHERE posting_id = %s ORDER BY created_at DESC LIMIT 1;",
+                    (posting_id,),
+                )
+                row = cur.fetchone()
+                return Match(**dict(row)) if row else None
+
+    def update_posting_status(self, posting_id: int, status: str) -> None:
+        """Updates the status of a posting (e.g. reviewed, applied, ignored, closed)."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE postings SET status = %s, updated_at = NOW() WHERE id = %s;",
+                    (status, posting_id),
+                )
+            conn.commit()
+
+    def create_user(self, name: str, email: str) -> Dict[str, Any]:
+        """Inserts or activates a verified user in the users table after successful OTP verification."""
+        clean_email = email.strip().lower()
+        clean_name = name.strip()
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (name, email, is_active, created_at, updated_at)
+                    VALUES (%s, %s, TRUE, NOW(), NOW())
+                    ON CONFLICT (email) DO UPDATE
+                    SET name = EXCLUDED.name,
+                        is_active = TRUE,
+                        updated_at = NOW()
+                    RETURNING id, name, email, is_active, created_at;
+                    """,
+                    (clean_name, clean_email),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return dict(row)
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a user from the database by email address."""
+        clean_email = email.strip().lower()
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, name, email, is_active, created_at FROM users WHERE LOWER(email) = %s AND is_active = TRUE;",
+                    (clean_email,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Retrieves all registered and active users."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT id, name, email, is_active, created_at FROM users WHERE is_active = TRUE ORDER BY id;")
+                rows = cur.fetchall()
+                return [dict(r) for r in rows]
+
+    def get_pending_by_company(self, company: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves pending postings and in-flight applications for a company or all companies.
+
+        Answers questions like 'what's pending for Goldman Sachs' directly from the database.
+        """
+        query = """
+            SELECT 
+                p.id AS posting_id,
+                c.name AS company_name,
+                p.title,
+                p.team,
+                p.url,
+                p.status AS posting_status,
+                p.relevant,
+                p.first_seen_at,
+                a.id AS application_id,
+                a.stage AS application_stage,
+                a.oa_date,
+                a.referral_status,
+                a.resume_version,
+                a.notes
+            FROM postings p
+            JOIN companies c ON p.company_id = c.id
+            LEFT JOIN applications a ON p.id = a.posting_id
+            WHERE (p.status IN ('new', 'reviewed') OR (a.stage IS NOT NULL AND a.stage NOT IN ('rejected', 'offer_accepted', 'withdrawn')))
+        """
+        params = []
+        if company:
+            query += " AND LOWER(c.name) LIKE LOWER(%s)"
+            params.append(f"%{company.strip()}%")
+        query += " ORDER BY p.first_seen_at DESC LIMIT 50;"
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                return [dict(r) for r in cur.fetchall()]
+
+    def get_recent_postings(self, days: int = 7, company: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves genuine postings detected within the last N days."""
+        query = """
+            SELECT 
+                p.id AS posting_id,
+                c.name AS company_name,
+                p.title,
+                p.team,
+                p.url,
+                p.status,
+                p.relevant,
+                p.first_seen_at,
+                p.last_seen_at
+            FROM postings p
+            JOIN companies c ON p.company_id = c.id
+            WHERE p.first_seen_at >= NOW() - INTERVAL '%s day'
+        """
+        params = [days]
+        if company:
+            query += " AND LOWER(c.name) LIKE LOWER(%s)"
+            params.append(f"%{company.strip()}%")
+        query += " ORDER BY p.first_seen_at DESC LIMIT 100;"
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                return [dict(r) for r in cur.fetchall()]
+
+    def update_application_status(
+        self,
+        posting_id: int,
+        stage: str,
+        notes: Optional[str] = None,
+        oa_date: Optional[str] = None,
+        referral_status: Optional[str] = None,
+        resume_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Creates or updates application tracking details for a posting."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO applications (posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (posting_id) DO UPDATE
+                    SET stage = EXCLUDED.stage,
+                        notes = COALESCE(EXCLUDED.notes, applications.notes),
+                        oa_date = COALESCE(EXCLUDED.oa_date, applications.oa_date),
+                        referral_status = COALESCE(EXCLUDED.referral_status, applications.referral_status),
+                        resume_version = COALESCE(EXCLUDED.resume_version, applications.resume_version),
+                        updated_at = NOW()
+                    RETURNING id, posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at;
+                    """,
+                    (posting_id, stage, notes, oa_date, referral_status, resume_version),
+                )
+                row = cur.fetchone()
+                # Also synchronize posting status if applied
+                if stage in ("applied", "oa", "phone_screen", "technical_interview", "onsite", "offer"):
+                    cur.execute("UPDATE postings SET status = 'applied', updated_at = NOW() WHERE id = %s;", (posting_id,))
+            conn.commit()
+        return dict(row)
+
+    def get_application_by_posting_id(self, posting_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves tracking information for an applied posting."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM applications WHERE posting_id = %s;", (posting_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
 
 
 if __name__ == "__main__":
