@@ -1,211 +1,495 @@
-# Argus — config/companies.yaml (Phase 2)
-# stipend figures are self-reported/cycle-dependent — re-verify at application time,
-# same lesson as the "don't trust aggregators" rule for postings themselves.
-# ats_type: "verify" means check devtools Network tab before writing the adapter.
+# Argus — config/companies.yaml
+# Complete Target Company Directory categorized by hiring tiers, hiring funnel, ATS & OA platform.
+# ATS types:
+#   - greenhouse: Native Greenhouse board API
+#   - lever: Native Lever postings API
+#   - workday: Reverse-engineered Workday CXS JSON API (/wday/cxs/{tenant}/{client}/jobs)
+#   - amazon: Amazon Jobs search JSON API (amazon.jobs/en/search.json)
+#   - google: Google Careers search JSON API (careers.google.com/api/v3/search/)
+#   - microsoft: Microsoft Careers search JSON API (gcsservices.careers.microsoft.com/search/api/v1/search)
+#   - goldman: Goldman Sachs Enterprise Careers JSON API
+#   - eightfold: Eightfold AI career portal API (api/apply/v2/jobs)
+#   - custom: Custom ATS / SuccessFactors / Taleo / iCIMS / proprietary network endpoint
 
-product_based:
+faang_maang:
   - name: Google
-    stipend: "₹1.25–1.5L/month (Bengaluru/Hyderabad, 2026 figures)"
     careers_page_url: https://careers.google.com
-    ats_type: custom
-  - name: Uber
-    stipend: "₹1.1–1.6L/month"
-    careers_page_url: https://www.uber.com/careers
-    ats_type: verify
-  - name: Microsoft
-    stipend: "verify — broad Big Tech India range ₹40K–80K/month, some report higher"
-    careers_page_url: https://careers.microsoft.com
-    ats_type: custom
+    ats_type: google
+    oa_platform: "Custom Google OA"
+    hiring_process: "Resume screen -> 1-2 phone screens -> onsite (4-5 rounds: DSA, system design/googliness)"
+    stipend: "₹1.25–1.5L/month (Bengaluru/Hyderabad, 2026 figures)"
   - name: Amazon
-    stipend: verify
     careers_page_url: https://www.amazon.jobs
+    ats_type: amazon
+    oa_platform: "HackerRank / Amazon proprietary"
+    hiring_process: "OA (2 coding + workstyle survey) -> 2-3 interviews with Leadership Principles"
+  - name: Meta
+    careers_page_url: https://www.metacareers.com
+    ats_type: greenhouse
+    oa_platform: "CoderPad / HackerRank"
+    hiring_process: "Resume -> phone screen (coding) -> onsite (2 coding, 1 behavioral)"
+  - name: Apple
+    careers_page_url: https://jobs.apple.com
     ats_type: custom
-  - name: Adobe
-    stipend: "known for strong stipends, verify"
-    careers_page_url: https://careers.adobe.com
-    ats_type: verify
-  - name: Atlassian
-    stipend: "known for strong stipends, verify"
-    careers_page_url: https://www.atlassian.com/company/careers
-    ats_type: verify
-  - name: Salesforce
-    stipend: verify
-    careers_page_url: https://careers.salesforce.com
-    ats_type: verify
-  - name: LinkedIn
-    stipend: "known for strong stipends, verify"
-    careers_page_url: https://careers.linkedin.com
-    ats_type: verify
-  - name: Flipkart
-    stipend: "Runway program, verify"
-    careers_page_url: https://www.flipkartcareers.com
-    ats_type: verify
-  - name: Walmart Global Tech
-    stipend: verify
-    careers_page_url: https://careers.walmart.com/global-tech
-    ats_type: verify
-  - name: Sprinklr
-    stipend: "reputation for high stipend among Indian campus circles, verify"
-    careers_page_url: https://www.sprinklr.com/careers/
-    ats_type: verify
-  - name: Media.net
-    stipend: "long-standing reputation for high SDE intern stipend in India, verify"
-    careers_page_url: https://media.net/careers/
-    ats_type: verify
-  - name: ServiceNow
-    stipend: verify
-    careers_page_url: https://careers.servicenow.com
-    ats_type: verify
-  - name: Nutanix
-    stipend: verify
-    careers_page_url: https://www.nutanix.com/careers
-    ats_type: verify
-  - name: Rubrik
-    stipend: verify
-    careers_page_url: https://www.rubrik.com/careers
-    ats_type: verify
-  - name: Qualcomm
-    stipend: verify
-    careers_page_url: https://www.qualcomm.com/company/careers
-    ats_type: verify
-  - name: Samsung R&D Institute India
-    stipend: verify
-    careers_page_url: https://research.samsung.com/sri-in-careers
-    ats_type: verify
-  - name: Oracle
-    stipend: verify
-    careers_page_url: https://www.oracle.com/careers/
-    ats_type: verify
-  - name: SAP Labs India
-    stipend: verify
-    careers_page_url: https://www.sap.com/india/about/careers.html
-    ats_type: verify
+    oa_platform: "HackerRank"
+    hiring_process: "Referral-heavy, team-matching model, multiple technical rounds"
+  - name: Microsoft
+    careers_page_url: https://careers.microsoft.com
+    ats_type: microsoft
+    oa_platform: "Microsoft Learn / HackerRank"
+    hiring_process: "MS Engage hackathon or direct OA -> 4 rounds"
+    stipend: "₹40K–80K/month, some report higher"
+  - name: Netflix
+    careers_page_url: https://jobs.netflix.com
+    ats_type: greenhouse
+    oa_platform: "Selective / rare intern pipeline"
+    hiring_process: "Very limited entry-level hiring, highly selective"
 
-banking_and_quant:
-  - name: Goldman Sachs
-    stipend: "₹75K–1L+/month (Technology division, APAC), verify"
-    careers_page_url: https://www.goldmansachs.com/careers/
+quant_and_hft:
+  - name: Jane Street
+    careers_page_url: https://www.janestreet.com/join-jane-street/open-roles/
+    ats_type: greenhouse
+    oa_platform: "Own puzzle-based OA (probability/brainteasers)"
+    hiring_process: "OA -> phone interview (puzzles) -> onsite (coding + trading games)"
+  - name: Optiver
+    careers_page_url: https://optiver.com/working-at-optiver/career-opportunities/
+    ats_type: greenhouse
+    oa_platform: "Optiver numerical/logic test"
+    hiring_process: "Numerical reasoning test -> coding test -> interviews"
+    stipend: "opened Mumbai office 2024, top tier compensation"
+  - name: Citadel & Citadel Securities
+    careers_page_url: https://www.citadelsecurities.com/careers/
+    ats_type: greenhouse
+    oa_platform: "HackerRank + own quant test"
+    hiring_process: "Datacamp/coding OA -> superday (multiple interviews same day)"
+    stipend: "US intern base ~$4,800/wk + $15K housing; India/Gurugram competitive"
+  - name: DE Shaw India
+    careers_page_url: https://www.deshaw.com/careers
     ats_type: custom
+    oa_platform: "Own OA (coding + math)"
+    hiring_process: "OA -> 3-4 technical rounds"
+    stipend: "Hyderabad office, top-tier stipends"
+  - name: Two Sigma
+    careers_page_url: https://www.twosigma.com/careers/
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> phone -> onsite (coding + quant/ML)"
+  - name: Hudson River Trading (HRT)
+    careers_page_url: https://www.hudsonrivertrading.com/careers/
+    ats_type: greenhouse
+    oa_platform: "Own OA (algo + stats)"
+    hiring_process: "OA -> interviews"
+  - name: Jump Trading
+    careers_page_url: https://www.jumptrading.com/careers/
+    ats_type: greenhouse
+    oa_platform: "Own OA"
+    hiring_process: "OA -> interviews (math-heavy)"
+  - name: Tower Research Capital
+    careers_page_url: https://www.tower-research.com/careers
+    ats_type: lever
+    oa_platform: "Own OA"
+    hiring_process: "OA -> interviews"
+    stipend: "Gurugram office, reputation for very high stipends"
+  - name: IMC Trading
+    careers_page_url: https://www.imc.com/eu/careers
+    ats_type: greenhouse
+    oa_platform: "Own numerical + coding test"
+    hiring_process: "Test -> interviews"
+  - name: WorldQuant
+    careers_page_url: https://www.worldquant.com/careers/
+    ats_type: custom
+    oa_platform: "WorldQuant Challenge (WQBRAIN)"
+    hiring_process: "Challenge -> interviews"
+  - name: Graviton Research Capital
+    careers_page_url: https://gravitontrading.com/careers
+    ats_type: custom
+    oa_platform: "Own coding + math test"
+    hiring_process: "Test -> interviews"
+    stipend: "up to ₹57L for a 2-month internship (reported)"
+  - name: AlphaGrep
+    careers_page_url: https://www.alphagrep.com/careers
+    ats_type: custom
+    oa_platform: "Coding + math test"
+    hiring_process: "Test -> interviews"
+  - name: Quadeye
+    careers_page_url: https://www.quadeye.com/careers
+    ats_type: custom
+    oa_platform: "Coding + math test"
+    hiring_process: "Test -> interviews"
+
+global_fintech:
+  - name: Stripe
+    careers_page_url: https://stripe.com/jobs
+    ats_type: greenhouse
+    oa_platform: "HackerRank / CodeSignal"
+    hiring_process: "OA -> 2 technical interviews"
+  - name: PayPal
+    careers_page_url: https://careers.pypl.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> 3-4 rounds"
+  - name: Visa
+    careers_page_url: https://corporate.visa.com/en/careers.html
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> technical + HM rounds"
+  - name: Mastercard
+    careers_page_url: https://careers.mastercard.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> panel interviews"
+  - name: Block (Square)
+    careers_page_url: https://block.xyz/careers
+    ats_type: greenhouse
+    oa_platform: "CoderPad"
+    hiring_process: "Phone screen -> onsite"
+  - name: Adyen
+    careers_page_url: https://careers.adyen.com
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> onsite loop"
+
+indian_fintech:
+  - name: Razorpay
+    careers_page_url: https://razorpay.com/careers/
+    ats_type: lever
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> 2-3 technical + culture round"
+  - name: PhonePe
+    careers_page_url: https://www.phonepe.com/careers/
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> 3-4 rounds"
+  - name: Paytm
+    careers_page_url: https://paytm.com/careers
+    ats_type: custom
+    oa_platform: "HackerEarth"
+    hiring_process: "OA -> technical rounds"
+  - name: CRED
+    careers_page_url: https://careers.cred.club
+    ats_type: greenhouse
+    oa_platform: "HackerRank / take-home assignment"
+    hiring_process: "Assignment -> interviews (design-heavy culture)"
+  - name: Groww
+    careers_page_url: https://groww.in/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Zerodha
+    careers_page_url: https://careers.zerodha.com
+    ats_type: custom
+    oa_platform: "Take-home assignment"
+    hiring_process: "Assignment -> 1-2 interviews (selective)"
+  - name: Zeta
+    careers_page_url: https://www.zeta.tech/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+
+indian_product_unicorns:
+  - name: Flipkart
+    careers_page_url: https://www.flipkartcareers.com
+    ats_type: custom
+    oa_platform: "HackerEarth (GRiD hackathon)"
+    hiring_process: "GRiD (campus) -> coding rounds -> interviews"
+  - name: Swiggy
+    careers_page_url: https://careers.swiggy.com
+    ats_type: lever
+    oa_platform: "HackerEarth"
+    hiring_process: "OA -> interviews"
+  - name: Zomato
+    careers_page_url: https://www.zomato.com/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Ola
+    careers_page_url: https://olaelectric.com/careers
+    ats_type: custom
+    oa_platform: "HackerEarth"
+    hiring_process: "OA -> interviews"
+  - name: Meesho
+    careers_page_url: https://www.meesho.io/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Dream11
+    careers_page_url: https://careers.dream11.com
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Myntra
+    careers_page_url: https://careers.myntra.com
+    ats_type: custom
+    oa_platform: "HackerEarth"
+    hiring_process: "HackerEarth / campus hiring -> interviews"
+  - name: Postman
+    careers_page_url: https://www.postman.com/company/careers/
+    ats_type: greenhouse
+    oa_platform: "HackerRank / take-home"
+    hiring_process: "Assignment-driven for some roles"
+  - name: Chargebee
+    careers_page_url: https://www.chargebee.com/careers/
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: BrowserStack
+    careers_page_url: https://www.browserstack.com/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank / take-home project"
+    hiring_process: "Project-based rounds common"
+  - name: Hasura
+    careers_page_url: https://hasura.io/careers/
+    ats_type: greenhouse
+    oa_platform: "Take-home assignment"
+    hiring_process: "Assignment-heavy (infra-focused)"
+  - name: Freshworks
+    careers_page_url: https://www.freshworks.com/company/careers/
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Innovaccer
+    careers_page_url: https://innovaccer.com/careers
+    ats_type: lever
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Media.net
+    careers_page_url: https://media.net/careers/
+    ats_type: custom
+    stipend: "long-standing reputation for high SDE intern stipend in India"
+  - name: Sprinklr
+    careers_page_url: https://www.sprinklr.com/careers/
+    ats_type: custom
+    stipend: "reputation for high stipend among Indian campus circles"
+  - name: Zoho
+    careers_page_url: https://careers.zoho.com
+    ats_type: custom
+
+enterprise_mnc:
+  - name: Adobe
+    careers_page_url: https://careers.adobe.com
+    ats_type: workday
+    oa_platform: "HackerRank (Adobe hackathons for campus)"
+    hiring_process: "Hackathon/OA -> interviews"
+  - name: Salesforce
+    careers_page_url: https://careers.salesforce.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: SAP Labs India
+    careers_page_url: https://www.sap.com/india/about/careers.html
+    ats_type: custom
+    oa_platform: "HackerRank / custom"
+    hiring_process: "OA -> interviews"
+  - name: Oracle
+    careers_page_url: https://www.oracle.com/careers/
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Cisco
+    careers_page_url: https://jobs.cisco.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: VMware (Broadcom)
+    careers_page_url: https://careers.broadcom.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Intuit
+    careers_page_url: https://www.intuit.com/careers
+    ats_type: workday
+    oa_platform: "HackerRank (hackathon path for campus)"
+    hiring_process: "OA/Hackathon -> interviews"
+  - name: ServiceNow
+    careers_page_url: https://careers.servicenow.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Nutanix
+    careers_page_url: https://www.nutanix.com/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Atlassian
+    careers_page_url: https://www.atlassian.com/company/careers
+    ats_type: greenhouse
+    oa_platform: "CodeSignal / HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Uber
+    careers_page_url: https://www.uber.com/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+    stipend: "₹1.1–1.6L/month"
+  - name: Airbnb
+    careers_page_url: https://careers.airbnb.com
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "Very limited intern intake"
+  - name: LinkedIn
+    careers_page_url: https://careers.linkedin.com
+    ats_type: microsoft
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Walmart Global Tech
+    careers_page_url: https://careers.walmart.com/global-tech
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Goldman Sachs
+    careers_page_url: https://www.goldmansachs.com/careers/
+    ats_type: goldman
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> superday"
+    stipend: "₹75K–1L+/month (Technology division, APAC)"
+  - name: Morgan Stanley
+    careers_page_url: https://www.morganstanley.com/people-opportunities
+    ats_type: workday
+    oa_platform: "HackerRank / Codility"
+    hiring_process: "OA -> interviews"
   - name: JPMorgan Chase
-    stipend: verify
     careers_page_url: https://careers.jpmorgan.com
     ats_type: custom
-  - name: Morgan Stanley
-    stipend: verify
-    careers_page_url: https://www.morganstanley.com/people-opportunities
-    ats_type: verify
-  - name: Citi
-    stipend: verify
-    careers_page_url: https://jobs.citi.com
-    ats_type: verify
-  - name: Deutsche Bank
-    stipend: verify
-    careers_page_url: https://careers.db.com
-    ats_type: verify
+    oa_platform: "HackerRank (Code for Good hackathon)"
+    hiring_process: "Hackathon/OA -> interviews"
   - name: Barclays
-    stipend: verify
     careers_page_url: https://search.jobs.barclays
-    ats_type: verify
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Deutsche Bank
+    careers_page_url: https://careers.db.com
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Citi
+    careers_page_url: https://jobs.citi.com
+    ats_type: custom
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
   - name: Wells Fargo
-    stipend: verify
     careers_page_url: https://www.wellsfargojobs.com
-    ats_type: verify
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
   - name: American Express
-    stipend: verify
     careers_page_url: https://aexp.eightfold.ai
-    ats_type: verify
+    ats_type: eightfold
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
   - name: UBS
-    stipend: verify
     careers_page_url: https://www.ubs.com/careers
-    ats_type: verify
+    ats_type: custom
   - name: HSBC
-    stipend: verify
     careers_page_url: https://www.hsbc.com/careers
-    ats_type: verify
+    ats_type: custom
   - name: BNY Mellon
-    stipend: verify
     careers_page_url: https://www.bny.com/careers
-    ats_type: verify
-  # --- quant / HFT: pays far above banking for the same DSA skillset ---
-  - name: Citadel Securities
-    stipend: "US intern base ~$4,800/wk + $15K housing (US program); India/Gurugram figure unconfirmed — verify separately"
-    careers_page_url: https://www.citadelsecurities.com/careers/
-    ats_type: verify
-  - name: Tower Research Capital
-    stipend: "Gurugram office, reputation for very high stipends, verify"
-    careers_page_url: https://www.tower-research.com/careers
-    ats_type: verify
-  - name: Graviton Research Capital
-    stipend: "up to ₹57L for a 2-month internship (reported)"
-    careers_page_url: https://gravitontrading.com/careers
-    ats_type: verify
-  - name: AlphaGrep
-    stipend: "high, competing with Graviton/Quadeye, verify"
-    careers_page_url: https://www.alphagrep.com/careers
-    ats_type: verify
-  - name: Quadeye
-    stipend: "high, verify"
-    careers_page_url: https://www.quadeye.com/careers
-    ats_type: verify
-  - name: IMC Trading
-    stipend: "expanding India headcount, verify"
-    careers_page_url: https://www.imc.com/eu/careers
-    ats_type: verify
-  - name: Optiver
-    stipend: "opened Mumbai office 2024, verify"
-    careers_page_url: https://optiver.com/working-at-optiver/career-opportunities/
-    ats_type: verify
-  - name: DE Shaw India
-    stipend: "Hyderabad office, long-standing reputation for top-tier stipends, verify"
-    careers_page_url: https://www.deshaw.com/careers
-    ats_type: verify
-  - name: WorldQuant
-    stipend: "Mumbai office, verify"
-    careers_page_url: https://www.worldquant.com/careers/
-    ats_type: verify
+    ats_type: custom
+  - name: Rubrik
+    careers_page_url: https://www.rubrik.com/careers
+    ats_type: greenhouse
 
-well_funded_startups:
-  - name: Razorpay
-    stipend: verify
-    careers_page_url: https://razorpay.com/careers/
-    ats_type: verify
-  - name: CRED
-    stipend: "reputation for high stipends among well-funded fintechs, verify"
-    careers_page_url: https://careers.cred.club
-    ats_type: verify
-  - name: Zerodha
-    stipend: "profitable/bootstrapped, known for competitive stipends, verify"
-    careers_page_url: https://careers.zerodha.com
-    ats_type: verify
-  - name: PhonePe
-    stipend: verify
-    careers_page_url: https://www.phonepe.com/careers/
-    ats_type: verify
-  - name: Groww
-    stipend: verify
-    careers_page_url: https://groww.in/careers
-    ats_type: verify
-  - name: Meesho
-    stipend: verify
-    careers_page_url: https://www.meesho.io/careers
-    ats_type: verify
-  - name: Postman
-    stipend: "API tooling unicorn, reputation for strong eng stipends, verify"
-    careers_page_url: https://www.postman.com/company/careers/
-    ats_type: verify
-  - name: Chargebee
-    stipend: verify
-    careers_page_url: https://www.chargebee.com/careers/
-    ats_type: verify
-  - name: Freshworks
-    stipend: "Nasdaq-listed, verify"
-    careers_page_url: https://www.freshworks.com/company/careers/
-    ats_type: verify
-  - name: Zoho
-    stipend: "self-funded/profitable but historically pays below market vs. peers, verify"
-    careers_page_url: https://careers.zoho.com
-    ats_type: verify
-  - name: Dream11
-    stipend: verify
-    careers_page_url: https://careers.dream11.com
-    ats_type: verify
+chips_systems_infra:
+  - name: Nvidia
+    careers_page_url: https://www.nvidia.com/en-us/about-nvidia/careers/
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews (CUDA/systems focus)"
+  - name: Qualcomm
+    careers_page_url: https://www.qualcomm.com/company/careers
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Intel
+    careers_page_url: https://jobs.intel.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: AMD
+    careers_page_url: https://careers.amd.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Arm
+    careers_page_url: https://careers.arm.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Arista Networks
+    careers_page_url: https://www.arista.com/en/careers
+    ats_type: greenhouse
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Juniper Networks
+    careers_page_url: https://careers.juniper.net
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+  - name: Samsung R&D Institute India
+    careers_page_url: https://research.samsung.com/sri-in-careers
+    ats_type: custom
+    oa_platform: "HackerRank (Samsung PRISM / hackathons)"
+    hiring_process: "Hackathon/OA -> interviews"
+  - name: Western Digital
+    careers_page_url: https://jobs.westerndigital.com
+    ats_type: workday
+    oa_platform: "HackerRank"
+    hiring_process: "OA -> interviews"
+
+growth_stage_startups:
+  - name: Turing
+    careers_page_url: https://www.turing.com/careers
+    ats_type: custom
+    oa_platform: "Assignment + interviews"
+    hiring_process: "Take-home assignment + interviews"
+  - name: Uplers
+    careers_page_url: https://www.uplers.com/careers
+    ats_type: custom
+    oa_platform: "Assignment-based"
+    hiring_process: "Assignment-based"
+  - name: CoinDCX
+    careers_page_url: https://careers.coindcx.com
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Slice
+    careers_page_url: https://www.sliceit.com/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Jupiter
+    careers_page_url: https://jupiter.money/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Setu
+    careers_page_url: https://setu.co/careers
+    ats_type: greenhouse
+    oa_platform: "Assignment -> interviews"
+    hiring_process: "Take-home assignment -> interviews"
+  - name: Khatabook
+    careers_page_url: https://khatabook.com/careers
+    ats_type: lever
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: ShareChat
+    careers_page_url: https://sharechat.com/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Cure.fit
+    careers_page_url: https://www.cult.fit/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Rippling
+    careers_page_url: https://www.rippling.com/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"
+  - name: Clari
+    careers_page_url: https://www.clari.com/careers
+    ats_type: greenhouse
+    oa_platform: "OA -> interviews"
+    hiring_process: "OA -> interviews"

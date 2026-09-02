@@ -16,9 +16,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = PROJECT_ROOT / "config" / "companies.yaml"
 
 EXPECTED_CATEGORIES = {
-    "product_based": 19,
-    "banking_and_quant": 20,
-    "well_funded_startups": 11,
+    "faang_maang": 6,
+    "quant_and_hft": 13,
+    "global_fintech": 6,
+    "indian_fintech": 7,
+    "indian_product_unicorns": 16,
+    "enterprise_mnc": 26,
+    "chips_systems_infra": 9,
+    "growth_stage_startups": 11,
 }
 TOTAL_EXPECTED_COMPANIES = sum(EXPECTED_CATEGORIES.values())
 
@@ -33,7 +38,7 @@ class TestCompaniesConfig(unittest.TestCase):
         self.assertGreater(len(content.strip()), 0, "companies.yaml must not be empty")
 
     def test_companies_yaml_structure(self):
-        """Verify YAML parses into expected 3 categories."""
+        """Verify YAML parses into expected 8 categories."""
         content = CONFIG_FILE.read_text(encoding="utf-8")
         parsed = yaml.safe_load(content)
         self.assertIsInstance(parsed, dict, "companies.yaml root must be a mapping")
@@ -91,14 +96,14 @@ class TestCompaniesConfig(unittest.TestCase):
         google = catalog.get_company_by_name("Google")
         self.assertIsNotNone(google)
         self.assertEqual(google.name, "Google")
-        self.assertEqual(google.category, "product_based")
-        self.assertEqual(google.ats_type, "custom")
+        self.assertEqual(google.category, "faang_maang")
+        self.assertEqual(google.ats_type, "google")
 
         # Case-insensitive match
-        citadel = catalog.get_company_by_name("citadel securities")
+        citadel = catalog.get_company_by_name("citadel & citadel securities")
         self.assertIsNotNone(citadel)
-        self.assertEqual(citadel.name, "Citadel Securities")
-        self.assertEqual(citadel.category, "banking_and_quant")
+        self.assertEqual(citadel.name, "Citadel & Citadel Securities")
+        self.assertEqual(citadel.category, "quant_and_hft")
 
         # Non-existent
         non_existent = catalog.get_company_by_name("NonExistentCorpXYZ")
@@ -108,14 +113,28 @@ class TestCompaniesConfig(unittest.TestCase):
         """Verify filtering companies by ATS type."""
         catalog = load_companies_config(CONFIG_FILE)
 
+        google_ats = catalog.get_companies_by_ats_type("google")
+        self.assertIn("Google", [c.name for c in google_ats])
+
+        amazon_ats = catalog.get_companies_by_ats_type("amazon")
+        self.assertIn("Amazon", [c.name for c in amazon_ats])
+
+        workday_ats = catalog.get_companies_by_ats_type("workday")
+        self.assertIn("Salesforce", [c.name for c in workday_ats])
+        self.assertIn("Adobe", [c.name for c in workday_ats])
+
+        greenhouse_ats = catalog.get_companies_by_ats_type("greenhouse")
+        self.assertIn("Meta", [c.name for c in greenhouse_ats])
+        self.assertIn("Stripe", [c.name for c in greenhouse_ats])
+
+        lever_ats = catalog.get_companies_by_ats_type("lever")
+        self.assertIn("Razorpay", [c.name for c in lever_ats])
+        self.assertIn("Swiggy", [c.name for c in lever_ats])
+
         custom_ats_companies = catalog.get_companies_by_ats_type("custom")
         custom_names = [c.name for c in custom_ats_companies]
-
-        self.assertIn("Google", custom_names)
-        self.assertIn("Microsoft", custom_names)
-        self.assertIn("Amazon", custom_names)
-        self.assertIn("Goldman Sachs", custom_names)
         self.assertIn("JPMorgan Chase", custom_names)
+        self.assertIn("Flipkart", custom_names)
 
     def test_model_conversion_to_db_company(self):
         """Verify conversion from CompanyConfig to database Company model."""

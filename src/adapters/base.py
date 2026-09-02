@@ -112,6 +112,73 @@ class BaseAdapter(ABC):
 
         raise RuntimeError(f"[{self.company_name}] Request failed after retries: {url}")
 
+    def http_post_json(
+        self,
+        url: str,
+        json_payload: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Performs HTTP POST with backoff retry and returns parsed JSON."""
+        retries = 0
+        current_delay = 1.0
+
+        headers = self.get_headers()
+        headers["Content-Type"] = "application/json"
+
+        while retries <= self.max_retries:
+            try:
+                response = self.session.post(
+                    url,
+                    headers=headers,
+                    json=json_payload or {},
+                    params=params,
+                    timeout=self.timeout,
+                )
+
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get("Retry-After", current_delay))
+                    logger.warning(
+                        f"[{self.company_name}] Rate limited (429). Retrying after {retry_after}s..."
+                    )
+                    time.sleep(retry_after)
+                    retries += 1
+                    current_delay *= self.backoff_factor
+                    continue
+
+                if 400 <= response.status_code < 500:
+                    response.raise_for_status()
+
+                response.raise_for_status()
+                parsed = response.json()
+                if isinstance(parsed, list):
+                    return {"jobs": parsed}
+                return parsed
+
+            except requests.HTTPError as http_err:
+                if (
+                    http_err.response is not None
+                    and 400 <= http_err.response.status_code < 500
+                    and http_err.response.status_code != 429
+                ):
+                    logger.error(f"[{self.company_name}] Client error ({http_err.response.status_code}): {http_err}")
+                    raise
+                retries += 1
+                if retries > self.max_retries:
+                    logger.error(f"[{self.company_name}] Failed POST {url} after {self.max_retries} attempts: {http_err}")
+                    raise
+                time.sleep(current_delay)
+                current_delay *= self.backoff_factor
+
+            except (requests.RequestException, ValueError) as exc:
+                retries += 1
+                if retries > self.max_retries:
+                    logger.error(f"[{self.company_name}] Failed POST {url} after {self.max_retries} attempts: {exc}")
+                    raise
+                time.sleep(current_delay)
+                current_delay *= self.backoff_factor
+
+        raise RuntimeError(f"[{self.company_name}] POST Request failed after retries: {url}")
+
     @abstractmethod
     def fetch_raw_payload(self) -> Dict[str, Any]:
         """Fetches raw JSON payload from company ATS endpoint."""

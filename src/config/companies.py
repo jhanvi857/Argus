@@ -19,6 +19,8 @@ class CompanyConfig(BaseModel):
     ats_url: Optional[str] = None
     role_filter: List[str] = Field(default_factory=list)
     category: Optional[str] = None
+    oa_platform: Optional[str] = None
+    hiring_process: Optional[str] = None
 
     @field_validator("name", "careers_page_url", "ats_type")
     @classmethod
