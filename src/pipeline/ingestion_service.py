@@ -11,7 +11,7 @@ from src.adapters.models import ExtractedPosting
 from src.adapters.registry import get_adapter
 from src.diff.diff_engine import DiffEngine, DiffResult
 
-from src.classifier.relevance import classify_posting
+from src.graphs.ingestion_graph import process_new_posting
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ class IngestionResult(BaseModel):
     snapshot_id: int
     new_count: int
     relevant_count: int
+    duplicate_count: int
     updated_count: int
     unchanged_count: int
     closed_count: int
@@ -47,8 +48,9 @@ class IngestionPipeline:
         2. Persists immutable raw payload in `snapshots` table.
         3. Parses job postings from raw payload.
         4. Diffs against existing postings in `postings` table.
-        5. Classifies role relevance (SWE/Infra) for genuinely new postings.
-        6. Inserts new postings with relevance tags.
+        5. Runs each new posting through the Ingestion LangGraph
+           (extract_fields → classify_relevance → dedupe).
+        6. Inserts non-duplicate new postings with relevance tags.
         7. Silently updates modified active postings.
         8. Marks closed postings as status='closed'.
         9. Updates `companies.last_checked_at`.
@@ -82,27 +84,47 @@ class IngestionPipeline:
         existing_postings = self.db.get_postings_for_company(company_record.id)
         diff_res = DiffEngine.diff(existing_postings, extracted_postings)
 
-        # Step 4: Persist diff changes with relevance classification
+        # Step 4: Run new postings through Ingestion LangGraph
         relevant_count = 0
+        duplicate_count = 0
+        insertable_postings: List[ExtractedPosting] = []
+        relevant_flags: List[bool] = []
+
         if diff_res.new_postings:
             catalog = load_companies_config()
             cfg = catalog.get_company_by_name(company_record.name)
             role_filter = cfg.role_filter if cfg else []
 
-            relevant_flags: List[bool] = []
             for p in diff_res.new_postings:
-                cls_res = classify_posting(p, role_filter=role_filter)
-                relevant_flags.append(cls_res.relevant)
-                if cls_res.relevant:
-                    relevant_count += 1
-                    logger.info(f"[{company_record.name}] RELEVANT MATCH: '{p.title}' ({cls_res.rationale})")
+                graph_result = process_new_posting(p, company_record, role_filter, db_manager=self.db)
 
-            inserted_ids = self.db.insert_new_postings(
-                company_record.id, diff_res.new_postings, relevant_flags=relevant_flags
-            )
-            logger.info(
-                f"[{company_record.name}] Inserted {len(inserted_ids)} new postings ({relevant_count} relevant)"
-            )
+                is_relevant = graph_result.get("is_relevant", False)
+                is_duplicate = graph_result.get("is_duplicate", False)
+
+                if is_duplicate:
+                    duplicate_count += 1
+                    dup_id = graph_result.get("duplicate_of_posting_id")
+                    logger.info(
+                        f"[{company_record.name}] DUPLICATE skipped: '{p.title}' "
+                        f"(similar to posting #{dup_id})"
+                    )
+                    continue  # Don't insert duplicates
+
+                insertable_postings.append(p)
+                relevant_flags.append(is_relevant)
+                if is_relevant:
+                    relevant_count += 1
+                    rationale = graph_result.get("classification_rationale", "")
+                    logger.info(f"[{company_record.name}] RELEVANT MATCH: '{p.title}' ({rationale})")
+
+            if insertable_postings:
+                inserted_ids = self.db.insert_new_postings(
+                    company_record.id, insertable_postings, relevant_flags=relevant_flags
+                )
+                logger.info(
+                    f"[{company_record.name}] Inserted {len(inserted_ids)} new postings "
+                    f"({relevant_count} relevant, {duplicate_count} duplicates skipped)"
+                )
 
         if diff_res.updated_postings:
             for upd in diff_res.updated_postings:
@@ -126,6 +148,7 @@ class IngestionPipeline:
             snapshot_id=snapshot_id,
             new_count=len(diff_res.new_postings),
             relevant_count=relevant_count,
+            duplicate_count=duplicate_count,
             updated_count=len(diff_res.updated_postings),
             unchanged_count=len(diff_res.unchanged_postings),
             closed_count=len(diff_res.closed_external_ids),
@@ -181,6 +204,7 @@ def run_all(pipeline: Optional[IngestionPipeline] = None) -> List[Dict[str, Any]
                     "status": "success",
                     "new_postings": res.new_count,
                     "relevant_postings": res.relevant_count,
+                    "duplicate_postings": res.duplicate_count,
                     "updated_postings": res.updated_count,
                     "active_postings": res.unchanged_count,
                     "closed_postings": res.closed_count,
@@ -223,7 +247,7 @@ if __name__ == "__main__":
             print("\n--- Ingestion Results ---")
             print(f"• Company: {res.company_name} (ID: {res.company_id})")
             print(f"• Snapshot ID: {res.snapshot_id}")
-            print(f"• Genuinely New: {res.new_count} ({res.relevant_count} relevant)")
+            print(f"• Genuinely New: {res.new_count} ({res.relevant_count} relevant, {res.duplicate_count} duplicates skipped)")
             print(f"• Updated: {res.updated_count}")
             print(f"• Unchanged (Active): {res.unchanged_count}")
             print(f"• Closed/Missing: {res.closed_count}")
