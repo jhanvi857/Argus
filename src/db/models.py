@@ -70,3 +70,52 @@ class Snapshot(BaseModel):
     company_id: int
     fetched_at: Optional[datetime] = None
     raw_payload: Dict[str, Any]
+
+
+class ExperienceLog(BaseModel):
+    id: Optional[int] = None
+    company_id: int
+    posting_id: Optional[int] = None
+    application_id: Optional[int] = None
+    author_user_id: Optional[int] = None
+    stage: str = "applied"
+    technical_questions: Optional[str] = None
+    takeaways: Optional[str] = None
+    offer_details: Optional[str] = None
+    oa_date: Optional[date] = None
+    interview_date: Optional[date] = None
+    interview_round: Optional[str] = None
+    visibility: str = "private"  # 'private' | 'shared'
+    author_display_mode: str = "named"  # 'named' | 'anonymous'
+    verified_applicant: bool = False
+    confidentiality_ack: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PrepResource(BaseModel):
+    id: Optional[int] = None
+    company_id: int
+    posting_id: Optional[int] = None
+    stage: Optional[str] = None
+    title: Optional[str] = None
+    snippet: str
+    source: str  # 'LeetCode Discuss', 'TeamBlind', 'GeeksforGeeks'
+    url: str
+    fetched_at: Optional[datetime] = None
+
+
+class MergedExperienceItem(BaseModel):
+    id: Optional[int] = None
+    source_type: str  # 'community' | 'external'
+    stage: str
+    technical_questions: Optional[str] = None
+    takeaways: Optional[str] = None
+    offer_details: Optional[str] = None
+    author: str  # e.g. 'Anonymous', 'Jordan Lee', 'LeetCode Discuss'
+    verified_applicant: bool = False
+    url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    author_user_id: Optional[int] = None
+    visibility: Optional[str] = None
+

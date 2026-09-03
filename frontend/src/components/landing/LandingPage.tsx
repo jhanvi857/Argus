@@ -101,8 +101,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <a href="#features" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
             Features
           </a>
-          <a href="#pricing" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
-            Pricing
+          <a href="#how-it-works" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
+            How It Works
           </a>
           <a href="#about" style={{ color: '#4a4a42', fontSize: '14.5px', fontWeight: 500, textDecoration: 'none' }}>
             About
@@ -322,7 +322,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         gridTemplateColumns: '1.05fr 1fr',
         gap: '48px',
         alignItems: 'center',
-        position: 'relative'
+        position: 'relative',
+        height: '90vh'
       }}>
         {/* Left Hero Text */}
         <div>
@@ -1264,10 +1265,151 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* 7. Culminating CTA Page Banner & Guarantees */}
+      {/* 7. About Section (What this website is doing & background) */}
+      <section id="about" style={{
+        backgroundColor: '#faf5ec',
+        borderTop: '1px solid #ebe5d8',
+        borderBottom: '1px solid #ebe5d8',
+        padding: '80px 32px'
+      }}>
+        <div style={{ maxWidth: '1120px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '52px' }}>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: 800,
+              color: '#ad2831',
+              letterSpacing: '1.2px',
+              textTransform: 'uppercase',
+              marginBottom: '12px'
+            }}>
+              ABOUT ARGUS
+            </div>
+            <h2 style={{
+              fontFamily: "'Newsreader', 'Lora', serif",
+              fontSize: '36px',
+              fontWeight: 700,
+              color: '#1a1a16',
+              lineHeight: 1.2
+            }}>
+              Vigilance on Official Career Pages. <span style={{ color: '#ad2831' }}>Zero Aggregator Noise.</span>
+            </h2>
+            <p style={{
+              fontSize: '15px',
+              color: '#6b6b5e',
+              maxWidth: '720px',
+              margin: '14px auto 0',
+              lineHeight: 1.6
+            }}>
+              Argus was built to eliminate the tedious manual cycle of checking dozens of company career portals, wading through stale aggregators, and guessing how to tailor applications.
+            </p>
+          </div>
+
+          {/* 3 Core Pillars */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))',
+            gap: '26px'
+          }}>
+            {/* Pillar 1 */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '30px 26px',
+              border: '1px solid #ebe5d8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                backgroundColor: '#f6e4e6',
+                color: '#ad2831',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Building2 size={22} />
+              </div>
+              <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#1a1a16', margin: 0 }}>
+                Direct ATS Vigilance
+              </h3>
+              <p style={{ fontSize: '13.5px', color: '#6b6b5e', lineHeight: 1.6, margin: 0 }}>
+                Argus monitors official career pages (Workday, Greenhouse, Lever, and custom APIs) on a scheduled cadence — bypassing stale job boards, duplicate postings, and recruiter spam.
+              </p>
+            </div>
+
+            {/* Pillar 2 */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '30px 26px',
+              border: '1px solid #ebe5d8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                backgroundColor: '#f6e4e6',
+                color: '#ad2831',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Sparkles size={22} />
+              </div>
+              <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#1a1a16', margin: 0 }}>
+                Grounded Portfolio Matcher
+              </h3>
+              <p style={{ fontSize: '13.5px', color: '#6b6b5e', lineHeight: 1.6, margin: 0 }}>
+                When you find an opportunity, our LangGraph AI analyzes the JD against your actual verified projects and skills — recommending exactly which bullets and keywords to emphasize with zero hallucination.
+              </p>
+            </div>
+
+            {/* Pillar 3 */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '30px 26px',
+              border: '1px solid #ebe5d8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                backgroundColor: '#f6e4e6',
+                color: '#ad2831',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <ListChecks size={22} />
+              </div>
+              <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#1a1a16', margin: 0 }}>
+                Interview & Prep Intelligence
+              </h3>
+              <p style={{ fontSize: '13.5px', color: '#6b6b5e', lineHeight: 1.6, margin: 0 }}>
+                Track every stage from OA to Offer, log technical questions, and view verified peer debriefs alongside curated external prep from LeetCode Discuss and TeamBlind.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 8. Culminating CTA Page Banner & Guarantees */}
       <section style={{
         maxWidth: '1160px',
-        margin: '0 auto 80px',
+        margin: '80px auto 80px',
         padding: '0 32px'
       }}>
         <div style={{
@@ -1439,6 +1581,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Resources
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: '#737367' }}>
+                <a href="#about" style={{ color: 'inherit', textDecoration: 'none' }}>About Argus</a>
                 <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>How it works</a>
                 <a href="#features" style={{ color: 'inherit', textDecoration: 'none' }}>Ground Truth Grounding</a>
                 <a href="#mcp" style={{ color: 'inherit', textDecoration: 'none' }}>MCP Integration</a>

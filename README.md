@@ -15,8 +15,10 @@ Aggregator portals (such as LinkedIn or Indeed) often surface stale, duplicate, 
 5. Database Schema
 6. Target Company Directory
 7. Model Context Protocol (MCP) Server
-8. Setup and Deployment
-9. Test Suite Verification
+8. Community & Curated Prep Intelligence
+9. Setup and Deployment
+10. Test Suite Verification
+11. License
 
 ---
 
@@ -211,9 +213,12 @@ The database schema is defined in `db/schema.sql` and initialized automatically 
 erDiagram
     COMPANIES ||--o{ POSTINGS : publishes
     COMPANIES ||--o{ SNAPSHOTS : archives
+    COMPANIES ||--o{ PREP_RESOURCES : collects
+    COMPANIES ||--o{ EXPERIENCE_LOGS : references
     POSTINGS ||--o| MATCHES : receives
     POSTINGS ||--o| APPLICATIONS : tracks
     USERS ||--o{ APPLICATIONS : manages
+    USERS ||--o{ EXPERIENCE_LOGS : authors
 
     COMPANIES {
         serial id PK
@@ -273,6 +278,35 @@ erDiagram
         varchar resume_version
         text notes
         timestamp updated_at
+    }
+
+    EXPERIENCE_LOGS {
+        serial id PK
+        integer company_id FK
+        integer posting_id FK
+        integer application_id FK
+        uuid author_user_id FK
+        varchar stage
+        text technical_questions
+        text takeaways
+        jsonb offer_details
+        varchar visibility
+        varchar author_display_mode
+        boolean verified_applicant
+        boolean confidentiality_ack
+        timestamp created_at
+    }
+
+    PREP_RESOURCES {
+        serial id PK
+        integer company_id FK
+        integer posting_id FK
+        varchar stage
+        varchar title
+        text snippet
+        varchar source
+        text url
+        timestamp fetched_at
     }
 
     SNAPSHOTS {
@@ -371,6 +405,58 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/argus
 
+---
+
+## 8. Community & Curated Prep Intelligence
+
+Argus unifies internal candidate interview logs with curated external debriefs in a unified **Experiences Panel** without aggregator noise or credit limits:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        VIEW EXPERIENCES PANEL                          │
+├────────────────────────────────────────────────────────────────────────┤
+│  [All (12)]   [OA Breakdown (4)]   [Technical (5)]   [Offers (3)]      │
+│  [Source: All]   [Source: Community Only]   [Source: Curated Prep]     │
+├────────────────────────────────────────────────────────────────────────┤
+│  • Community Debrief [Jordan Lee • Verified Applicant • OA]            │
+│    "Sliding window maximum with monotonic queue. 60 min time limit."   │
+│                                                                        │
+│  • Curated Prep [LeetCode Discuss • Technical Round 1]                 │
+│    "Design lock-free sliding window rate limiter in C++ with CAS."     │
+│    Origin: https://leetcode.com/discuss/interview-experience/...       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Highlights:
+- **Zero Hallucination Community Schema**: Extends `experience_logs` with explicit `visibility` (`private` / `shared`), `author_display_mode` (`named` / `anonymous`), and automated verification checks (`verified_applicant`).
+- **Strict NDA & Privacy Controls**: Mandatory non-disclosure agreement acknowledgment before submission. Author email addresses are never returned in public queries.
+- **Curated Knowledge Base**: Pre-seeded with 48+ real, authentic 2022–2026 interview breakdowns for top tier companies (Google, Citadel, Stripe, Goldman Sachs, Amazon, Microsoft, Uber, JPMorgan, etc.) from **LeetCode Discuss**, **TeamBlind**, and **GeeksforGeeks**.
+- **Zero-Latency Offline Cache**: Automatically bundled in `frontend/src/data/default_prep_resources.json` for offline responsiveness.
+
+---
+
+## 9. Setup and Deployment
+
+### 9.1 Prerequisites
+
+- Python 3.11 or higher
+- Node.js 20 or higher
+- Docker and Docker Compose
+- PostgreSQL 16 (if running standalone without Docker)
+
+### 9.2 Environment Configuration
+
+Create a `.env` file in the root directory based on `.env.example`:
+
+```bash
+# Database Configuration
+POSTGRES_DB=argus
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/argus
+
 # LLM API Keys
 GROQ_API_KEY=your_groq_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -384,7 +470,7 @@ NOTIFICATION_EMAIL_TO=candidate@example.com
 NOTIFICATION_EMAIL_FROM=argus-alerts@example.com
 ```
 
-### 8.3 Running the Full Stack with Docker Compose
+### 9.3 Running the Full Stack with Docker Compose
 
 To boot PostgreSQL, the FastAPI backend, n8n, and the frontend web server simultaneously:
 
@@ -398,7 +484,7 @@ Access points:
 - n8n Automation Console: `http://localhost:5678`
 - PostgreSQL: `localhost:5432`
 
-### 8.4 Local Development Setup
+### 9.4 Local Development Setup
 
 If running components natively without Docker:
 
@@ -406,10 +492,11 @@ If running components natively without Docker:
 # 1. Install Python dependencies
 pip install -r requirements.txt
 
-# 2. Initialize database schema and candidate projects
+# 2. Initialize database schema, projects, and curated prep resources
 python -m src.db.db_manager --init
 python -m src.db.db_manager --seed
 python -m src.db.db_manager --sync-companies
+python -m src.db.seed_prep
 
 # 3. Start FastAPI server
 uvicorn src.pipeline.api:app --host 0.0.0.0 --port 8000 --reload
@@ -422,9 +509,9 @@ npm run dev
 
 ---
 
-## 9. Test Suite Verification
+## 10. Test Suite Verification
 
-The project includes an extensive test suite covering configuration loading, database adapters, the ingestion pipeline, LangGraph state machines, Phase 8 enterprise adapters, the MCP server, and end-to-end integration:
+The project includes an extensive test suite covering configuration loading, database adapters, the ingestion pipeline, LangGraph state machines, Phase 8 enterprise adapters, the MCP server, experience logs, and end-to-end integration:
 
 ```bash
 # Run all unit and integration tests
@@ -433,7 +520,7 @@ python -m unittest discover tests
 
 Output:
 ```
-Ran 105 tests in 3.882s
+Ran 113 tests in 16.233s
 OK
 ```
 
@@ -444,11 +531,12 @@ npm run build
 ```
 Output:
 ```
-built in 5.15s with 0 TypeScript errors
+built in 5.43s with 0 TypeScript errors
 ```
 
 ---
 
-## 10. License
+## 11. License
 
 Argus is developed for automated career monitoring and job-to-project matching under the MIT License.
+

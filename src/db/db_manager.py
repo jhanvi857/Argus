@@ -7,7 +7,17 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from dotenv import load_dotenv
 
-from .models import Project, Company, Posting, Match, Application, Snapshot
+from .models import (
+    Project,
+    Company,
+    Posting,
+    Match,
+    Application,
+    Snapshot,
+    ExperienceLog,
+    PrepResource,
+    MergedExperienceItem,
+)
 
 # Load environment variables
 load_dotenv()
@@ -645,6 +655,254 @@ class DatabaseManager:
                 cur.execute("SELECT * FROM applications WHERE posting_id = %s;", (posting_id,))
                 row = cur.fetchone()
                 return dict(row) if row else None
+
+    # =========================================================================
+    # Experience Logs & Community Knowledge Sharing
+    # =========================================================================
+
+    def save_experience_log(
+        self,
+        company_id: int,
+        stage: str,
+        posting_id: Optional[int] = None,
+        application_id: Optional[int] = None,
+        author_user_id: Optional[int] = None,
+        technical_questions: Optional[str] = None,
+        takeaways: Optional[str] = None,
+        offer_details: Optional[str] = None,
+        oa_date: Optional[str] = None,
+        interview_date: Optional[str] = None,
+        interview_round: Optional[str] = None,
+        visibility: str = "private",
+        author_display_mode: str = "named",
+        confidentiality_ack: bool = False,
+        log_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Creates or updates an interview experience log with consent & privacy controls."""
+        if visibility == "shared" and not confidentiality_ack:
+            raise ValueError("Sharing with community requires confidentiality acknowledgment (NDA confirmation).")
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Determine verified_applicant flag based on application existence
+                verified_applicant = False
+                app_id = application_id
+                if not app_id and posting_id:
+                    cur.execute("SELECT id FROM applications WHERE posting_id = %s;", (posting_id,))
+                    app_row = cur.fetchone()
+                    if app_row:
+                        app_id = app_row["id"]
+                        verified_applicant = True
+                elif app_id:
+                    verified_applicant = True
+
+                if log_id:
+                    cur.execute(
+                        """
+                        UPDATE experience_logs
+                        SET company_id = %s,
+                            posting_id = %s,
+                            application_id = %s,
+                            stage = %s,
+                            technical_questions = %s,
+                            takeaways = %s,
+                            offer_details = %s,
+                            oa_date = %s,
+                            interview_date = %s,
+                            interview_round = %s,
+                            visibility = %s,
+                            author_display_mode = %s,
+                            verified_applicant = %s,
+                            confidentiality_ack = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING *;
+                        """,
+                        (
+                            company_id,
+                            posting_id,
+                            app_id,
+                            stage,
+                            technical_questions,
+                            takeaways,
+                            offer_details,
+                            oa_date or None,
+                            interview_date or None,
+                            interview_round,
+                            visibility,
+                            author_display_mode,
+                            verified_applicant,
+                            confidentiality_ack,
+                            log_id,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO experience_logs (
+                            company_id, posting_id, application_id, author_user_id,
+                            stage, technical_questions, takeaways, offer_details,
+                            oa_date, interview_date, interview_round,
+                            visibility, author_display_mode, verified_applicant,
+                            confidentiality_ack, created_at, updated_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        RETURNING *;
+                        """,
+                        (
+                            company_id,
+                            posting_id,
+                            app_id,
+                            author_user_id,
+                            stage,
+                            technical_questions,
+                            takeaways,
+                            offer_details,
+                            oa_date or None,
+                            interview_date or None,
+                            interview_round,
+                            visibility,
+                            author_display_mode,
+                            verified_applicant,
+                            confidentiality_ack,
+                        ),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+        return dict(row)
+
+    def get_experience_log_by_id(self, log_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves a single experience log by ID."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM experience_logs WHERE id = %s;", (log_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def delete_experience_log(self, log_id: int, author_user_id: Optional[int] = None) -> bool:
+        """Deletes an experience log owned by the author."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if author_user_id is not None:
+                    cur.execute("DELETE FROM experience_logs WHERE id = %s AND author_user_id = %s;", (log_id, author_user_id))
+                else:
+                    cur.execute("DELETE FROM experience_logs WHERE id = %s;", (log_id,))
+                deleted = cur.rowcount > 0
+            conn.commit()
+        return deleted
+
+    # =========================================================================
+    # External Prep Resources (Tavily-pulled from LeetCode, Blind, GfG)
+    # =========================================================================
+
+    def save_prep_resource(
+        self,
+        company_id: int,
+        snippet: str,
+        source: str,
+        url: str,
+        stage: Optional[str] = None,
+        title: Optional[str] = None,
+        posting_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Saves an externally-pulled interview prep resource."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO prep_resources (company_id, posting_id, stage, title, snippet, source, url, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                    RETURNING *;
+                    """,
+                    (company_id, posting_id, stage, title, snippet, source, url),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return dict(row)
+
+    def clear_prep_resources_for_company(self, company_id: int) -> int:
+        """Clears previously fetched external prep resources for a company."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM prep_resources WHERE company_id = %s;", (company_id,))
+                deleted = cur.rowcount
+            conn.commit()
+        return deleted
+
+    # =========================================================================
+    # Merged Experience & External Prep Query
+    # =========================================================================
+
+    def get_merged_experiences(
+        self,
+        company_id: int,
+        stage_filter: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Retrieves merged community experience logs and external prep resources for a company.
+
+        Community logs only include shared entries with author display masked ('Anonymous' or User name, never raw email).
+        External entries carry direct links back to original source platforms.
+        """
+        query = """
+            -- Community (internal, user-submitted)
+            SELECT 
+                el.id,
+                'community' AS source_type,
+                el.stage,
+                el.technical_questions,
+                el.takeaways,
+                el.offer_details,
+                CASE 
+                    WHEN el.author_display_mode = 'anonymous' THEN 'Anonymous' 
+                    ELSE COALESCE(u.name, 'Argus Member') 
+                END AS author,
+                el.verified_applicant,
+                NULL AS url,
+                el.created_at,
+                el.author_user_id,
+                el.visibility
+            FROM experience_logs el 
+            LEFT JOIN users u ON u.id = el.author_user_id
+            WHERE el.company_id = %s AND el.visibility = 'shared'
+              AND (%s IS NULL OR el.stage = %s)
+
+            UNION ALL
+
+            -- External (Tavily-pulled)
+            SELECT 
+                pr.id,
+                'external' AS source_type,
+                pr.stage,
+                pr.snippet AS technical_questions,
+                NULL AS takeaways,
+                NULL AS offer_details,
+                pr.source AS author,
+                FALSE AS verified_applicant,
+                pr.url,
+                pr.fetched_at AS created_at,
+                NULL AS author_user_id,
+                'shared' AS visibility
+            FROM prep_resources pr
+            WHERE pr.company_id = %s
+              AND (%s IS NULL OR pr.stage = %s)
+
+            ORDER BY created_at DESC;
+        """
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    query,
+                    (company_id, stage_filter, stage_filter, company_id, stage_filter, stage_filter),
+                )
+                rows = cur.fetchall()
+                results = []
+                for r in rows:
+                    item = dict(r)
+                    if item.get("created_at"):
+                        item["created_at"] = str(item["created_at"])
+                    results.append(item)
+                return results
+
 
 
 if __name__ == "__main__":

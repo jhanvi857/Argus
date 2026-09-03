@@ -433,3 +433,111 @@ def api_list_users():
         return db.get_all_users()
     except Exception as exc:
         return []
+
+
+# =============================================================================
+# Experience Sharing & Interview Prep Endpoints (Community + External)
+# =============================================================================
+
+class ExperienceLogRequest(BaseModel):
+    stage: str
+    posting_id: Optional[int] = None
+    application_id: Optional[int] = None
+    author_user_id: Optional[int] = None
+    technical_questions: Optional[str] = None
+    takeaways: Optional[str] = None
+    offer_details: Optional[str] = None
+    oa_date: Optional[str] = None
+    interview_date: Optional[str] = None
+    interview_round: Optional[str] = None
+    visibility: str = "private"  # 'private' | 'shared'
+    author_display_mode: str = "named"  # 'named' | 'anonymous'
+    confidentiality_ack: bool = False
+    log_id: Optional[int] = None
+
+
+@app.get("/companies/{company_id}/experiences")
+def get_company_experiences(company_id: int, stage: Optional[str] = None):
+    """Returns merged, source-labeled community experiences and external prep resources for a company."""
+    from src.db.db_manager import DatabaseManager
+
+    db = DatabaseManager()
+    try:
+        return db.get_merged_experiences(company_id=company_id, stage_filter=stage)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch experiences: {exc}")
+
+
+@app.post("/companies/{company_id}/experiences")
+def save_company_experience(company_id: int, req: ExperienceLogRequest):
+    """Saves or updates an interview experience log with sharing and confidentiality validation."""
+    from src.db.db_manager import DatabaseManager
+
+    if req.visibility == "shared" and not req.confidentiality_ack:
+        raise HTTPException(
+            status_code=400,
+            detail="Sharing with community requires confirming that this does not violate any confidentiality agreement (NDA).",
+        )
+
+    db = DatabaseManager()
+    try:
+        saved = db.save_experience_log(
+            company_id=company_id,
+            stage=req.stage,
+            posting_id=req.posting_id,
+            application_id=req.application_id,
+            author_user_id=req.author_user_id,
+            technical_questions=req.technical_questions,
+            takeaways=req.takeaways,
+            offer_details=req.offer_details,
+            oa_date=req.oa_date,
+            interview_date=req.interview_date,
+            interview_round=req.interview_round,
+            visibility=req.visibility,
+            author_display_mode=req.author_display_mode,
+            confidentiality_ack=req.confidentiality_ack,
+            log_id=req.log_id,
+        )
+        return {"status": "ok", "experience_log": saved}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save experience log: {exc}")
+
+
+@app.delete("/experiences/{log_id}")
+def delete_company_experience(log_id: int, author_user_id: Optional[int] = None):
+    """Deletes an experience log owned by the user."""
+    from src.db.db_manager import DatabaseManager
+
+    db = DatabaseManager()
+    try:
+        deleted = db.delete_experience_log(log_id=log_id, author_user_id=author_user_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Experience log not found or unauthorized.")
+        return {"status": "ok", "message": "Experience log deleted."}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/companies/{company_id}/fetch-prep")
+def fetch_company_external_prep(company_id: int):
+    """Retrieves curated prep intelligence for the company from the curated knowledge base."""
+    from src.pipeline.prep_service import get_curated_company_prep
+
+    res = get_curated_company_prep(company_id=company_id)
+    if res.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Company #{company_id} not found.")
+
+    return {
+        "status": "ok",
+        "message": f"Loaded {res.get('count', 0)} curated prep debriefs.",
+        "company_name": res.get("company_name"),
+        "fetched_count": res.get("count", 0),
+        "items": res.get("items", []),
+    }
+
+
+

@@ -12,16 +12,22 @@ import {
   MatchResult, 
   Application, 
   IngestionTelemetry, 
-  PostingStatus 
+  PostingStatus,
+  ExperienceLog,
+  PrepResource,
+  MergedExperienceItem
 } from '../types';
 import { AuthService } from './auth';
 import { runGroundTruthMatcher } from './matcher';
+import defaultPrepResources from '../data/default_prep_resources.json';
 
 const STORAGE_KEYS = {
   COMPANIES: 'argus_companies_v3',
   POSTINGS: 'argus_postings_v3',
   APPLICATIONS_PREFIX: 'argus_apps_user_',
   MATCHES_PREFIX: 'argus_matches_user_',
+  EXPERIENCES: 'argus_experiences_v1',
+  PREP_RESOURCES: 'argus_prep_resources_v1',
   TELEMETRY: 'argus_telemetry_v3'
 };
 
@@ -492,6 +498,166 @@ export class ArgusDataService {
     const appsMap = this.load<Record<number, Application>>(key, {});
     delete appsMap[postingId];
     this.save(key, appsMap);
+  }
+
+  // --- EXPERIENCE SHARING & COMMUNITY PREP (MERGED DUAL-SOURCE) ---
+
+  public static async getCompanyExperiences(companyId: number, stage?: string): Promise<MergedExperienceItem[]> {
+    // 1. Attempt fetching from backend PostgreSQL
+    try {
+      let url = `/api/companies/${companyId}/experiences`;
+      if (stage && stage !== 'all') {
+        url += `?stage=${encodeURIComponent(stage)}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn('Backend experiences fetch error, falling back to local store:', e);
+    }
+
+    // 2. Client-side fallback: load from local storage or bundled curated resources
+    const allExp = this.load<ExperienceLog[]>(STORAGE_KEYS.EXPERIENCES, []);
+    const storedPrep = this.load<PrepResource[]>(STORAGE_KEYS.PREP_RESOURCES, []);
+    const allPrep = storedPrep.length > 0 ? storedPrep : (defaultPrepResources as unknown as PrepResource[]);
+
+    const user = this.getCurrentUser();
+    const communityItems: MergedExperienceItem[] = allExp
+      .filter(e => e.company_id === companyId && (e.visibility === 'shared' || e.author_user_id === user.id))
+      .filter(e => (!stage || stage === 'all' || e.stage === stage))
+      .map(e => ({
+        id: e.id || Date.now(),
+        source_type: 'community',
+        stage: e.stage,
+        technical_questions: e.technical_questions,
+        takeaways: e.takeaways,
+        offer_details: e.offer_details,
+        author: e.author_display_mode === 'anonymous' ? 'Anonymous' : (user.full_name || 'Argus Candidate'),
+        verified_applicant: e.verified_applicant,
+        url: null,
+        created_at: e.created_at || new Date().toISOString(),
+        author_user_id: e.author_user_id,
+        visibility: e.visibility
+      }));
+
+    const externalItems: MergedExperienceItem[] = allPrep
+      .filter(p => p.company_id === companyId)
+      .filter(p => (!stage || stage === 'all' || p.stage === stage))
+      .map(p => ({
+        id: p.id || Date.now(),
+        source_type: 'external',
+        stage: p.stage || 'technical_interview',
+        technical_questions: p.snippet,
+        takeaways: undefined,
+        offer_details: undefined,
+        author: p.source,
+        verified_applicant: false,
+        url: p.url,
+        created_at: p.fetched_at || new Date().toISOString(),
+        author_user_id: null,
+        visibility: 'shared'
+      }));
+
+    return [...communityItems, ...externalItems].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+  }
+
+  public static async saveExperienceLog(log: Partial<ExperienceLog>): Promise<ExperienceLog> {
+    const user = this.getCurrentUser();
+    const allExp = this.load<ExperienceLog[]>(STORAGE_KEYS.EXPERIENCES, []);
+    
+    // Check confidentiality acknowledgment
+    if (log.visibility === 'shared' && !log.confidentiality_ack) {
+      throw new Error('Sharing with community requires confirming that this does not violate any confidentiality agreement (NDA).');
+    }
+
+    const newLog: ExperienceLog = {
+      id: log.id || Date.now(),
+      company_id: log.company_id || 1,
+      posting_id: log.posting_id,
+      application_id: log.application_id,
+      author_user_id: user.id,
+      stage: log.stage || 'applied',
+      technical_questions: log.technical_questions || '',
+      takeaways: log.takeaways || '',
+      offer_details: log.offer_details,
+      oa_date: log.oa_date,
+      interview_date: log.interview_date,
+      interview_round: log.interview_round,
+      visibility: log.visibility || 'private',
+      author_display_mode: log.author_display_mode || 'named',
+      verified_applicant: log.verified_applicant ?? true,
+      confidentiality_ack: log.confidentiality_ack || false,
+      created_at: log.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const existingIdx = allExp.findIndex(e => e.id === newLog.id || (e.posting_id && e.posting_id === newLog.posting_id && e.author_user_id === user.id));
+    if (existingIdx !== -1) {
+      allExp[existingIdx] = { ...allExp[existingIdx], ...newLog };
+    } else {
+      allExp.unshift(newLog);
+    }
+    this.save(STORAGE_KEYS.EXPERIENCES, allExp);
+
+    // Sync to backend if available
+    try {
+      await fetch(`/api/companies/${newLog.company_id}/experiences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLog)
+      });
+    } catch (e) {
+      console.warn('Could not sync experience log to backend:', e);
+    }
+
+    return newLog;
+  }
+
+  public static async deleteExperienceLog(logId: number): Promise<boolean> {
+    const allExp = this.load<ExperienceLog[]>(STORAGE_KEYS.EXPERIENCES, []);
+    const filtered = allExp.filter(e => e.id !== logId);
+    this.save(STORAGE_KEYS.EXPERIENCES, filtered);
+
+    try {
+      await fetch(`/api/experiences/${logId}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.warn('Could not delete experience log from backend:', e);
+    }
+    return true;
+  }
+
+  public static async fetchExternalPrep(companyId: number): Promise<{ status: string; message: string; fetched_count: number; items: PrepResource[] }> {
+    try {
+      const res = await fetch(`/api/companies/${companyId}/fetch-prep`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          status: data.status || 'ok',
+          message: data.message || '',
+          fetched_count: data.fetched_count || 0,
+          items: data.items || []
+        };
+      }
+    } catch (e) {
+      console.warn('External prep fetch via backend failed:', e);
+    }
+    return {
+      status: 'ok',
+      message: 'Curated interview prep loaded from local knowledge base.',
+      fetched_count: 0,
+      items: []
+    };
   }
 
   // --- TELEMETRY & INGESTION INTEGRATION ---

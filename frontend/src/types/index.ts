@@ -271,6 +271,9 @@ export type ApplicationStage =
   | 'rejected'
   | 'withdrawn';
 
+export type ExperienceLogVisibility = 'private' | 'shared';
+export type AuthorDisplayMode = 'named' | 'anonymous';
+
 export interface Application {
   id?: number;
   user_id: string;
@@ -286,8 +289,60 @@ export interface Application {
   referral_status: ReferralStatus;
   stage: ApplicationStage;
   notes?: string;
+  visibility?: ExperienceLogVisibility;
+  author_display_mode?: AuthorDisplayMode;
+  confidentiality_ack?: boolean;
+  verified_applicant?: boolean;
   applied_date?: string;
   updated_at?: string;
+}
+
+export interface ExperienceLog {
+  id?: number;
+  company_id: number;
+  posting_id?: number | null;
+  application_id?: number | null;
+  author_user_id?: string | number | null;
+  stage: string;
+  technical_questions?: string;
+  takeaways?: string;
+  offer_details?: string;
+  oa_date?: string | null;
+  interview_date?: string | null;
+  interview_round?: string;
+  visibility: ExperienceLogVisibility;
+  author_display_mode: AuthorDisplayMode;
+  verified_applicant: boolean;
+  confidentiality_ack: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PrepResource {
+  id?: number;
+  company_id: number;
+  posting_id?: number | null;
+  stage?: string;
+  title?: string;
+  snippet: string;
+  source: string; // 'LeetCode Discuss', 'TeamBlind', 'GeeksforGeeks'
+  url: string;
+  fetched_at?: string;
+}
+
+export interface MergedExperienceItem {
+  id: number;
+  source_type: 'community' | 'external';
+  stage: string;
+  technical_questions?: string;
+  takeaways?: string;
+  offer_details?: string;
+  author: string; // 'Anonymous', 'Jordan Lee', 'LeetCode Discuss'
+  verified_applicant: boolean;
+  url?: string | null;
+  created_at?: string;
+  author_user_id?: string | number | null;
+  visibility?: ExperienceLogVisibility;
 }
 
 export interface IngestionTelemetry {
