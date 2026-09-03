@@ -212,14 +212,15 @@ export function runGroundTruthMatcher(posting: Posting, user: UserProfile): Matc
     };
   }
 
-  // 6. IDENTIFY HONEST GAPS / MISSING CAPABILITIES
+  // 6. IDENTIFY HONEST GAPS / MISSING CAPABILITIES & BRIDGE WITH PROJECT EVIDENCE
   const commonTechChecks = [
-    { name: 'Kubernetes', test: ['kubernetes', 'k8s'] },
-    { name: 'CUDA / GPU Programming', test: ['cuda', 'gpu compute', 'nccl'] },
-    { name: 'C++ Modern Standards', test: ['c++20', 'c++17', 'c++23'] },
-    { name: 'Rust', test: ['rust', 'cargo', 'tokio'] },
-    { name: 'Apache Kafka / Event Streaming', test: ['kafka', 'event streaming'] },
-    { name: 'eBPF Kernel Probing', test: ['ebpf', 'xdp', 'bcc'] }
+    { name: 'Kubernetes', test: ['kubernetes', 'k8s'], bridgeProj: 'CloudWeave', bridgeBullet: 'Engineered eBPF service mesh & Envoy proxy sidecar deployment on Kubernetes.', bridgeRationale: 'Directly compensated by your CloudWeave container infrastructure and mesh experience.' },
+    { name: 'CUDA / GPU Programming', test: ['cuda', 'gpu compute', 'nccl'], bridgeProj: 'Vexor', bridgeBullet: 'Vector search engine featuring AVX-512 SIMD kernels accelerating distance calculation by 4.2x.', bridgeRationale: 'Transferrable parallel compute and hardware vectorization demonstrated in Vexor.' },
+    { name: 'C++ Modern Standards', test: ['c++20', 'c++17', 'c++23', 'c++'], bridgeProj: 'GitResolve', bridgeBullet: 'Engineered AST merge conflict resolver in C++ with Tree-sitter and SQLite persistence.', bridgeRationale: 'Proves modern C++ systems programming, memory safety, and AST compilation.' },
+    { name: 'Rust', test: ['rust', 'cargo', 'tokio'], bridgeProj: 'Meridian', bridgeBullet: 'Engineered high-cardinality time-series storage engine in Rust with Tokio async runtime.', bridgeRationale: 'Demonstrated production Rust systems programming, async I/O, and zero-cost abstractions.' },
+    { name: 'Apache Kafka / Event Streaming', test: ['kafka', 'event streaming', 'streaming'], bridgeProj: 'NioFlow', bridgeBullet: 'Engineered a zero-allocation TCP event streaming server in Java/Netty handling 250k+ req/sec at sub-5ms p99 latency.', bridgeRationale: 'Compensated by NioFlow and Streamify high-throughput distributed log streaming engines.' },
+    { name: 'eBPF Kernel Probing', test: ['ebpf', 'xdp', 'bcc'], bridgeProj: 'CloudWeave', bridgeBullet: 'Instrumented Linux kernel socket hooks using eBPF programs for zero-overhead packet telemetry.', bridgeRationale: 'Direct hands-on kernel instrumentation in CloudWeave and Aegis.' },
+    { name: 'Distributed Consensus', test: ['raft', 'paxos', 'consensus'], bridgeProj: 'Evora', bridgeBullet: 'Implemented Raft consensus protocol from scratch in Go with dynamic cluster membership changes.', bridgeRationale: 'Verified by Evora linearizable storage engine with Jepsen partition safety testing.' }
   ];
 
   const userSkillNames = (user.skills || []).map(s => s.name.toLowerCase());
@@ -227,11 +228,31 @@ export function runGroundTruthMatcher(posting: Posting, user: UserProfile): Matc
   const allUserKnown = [...userSkillNames, ...userProjectTech];
 
   const missingGaps: string[] = [];
+  const gapBridges: any[] = [];
+
   for (const check of commonTechChecks) {
     const jdRequires = check.test.some(t => jdText.includes(t));
     const userHas = check.test.some(t => allUserKnown.some(k => k.includes(t) || t.includes(k)));
-    if (jdRequires && !userHas) {
-      missingGaps.push(check.name);
+
+    if (jdRequires) {
+      if (userHas) {
+        gapBridges.push({
+          skill: check.name,
+          isMet: true,
+          bridgedByProject: check.bridgeProj,
+          evidenceBullet: check.bridgeBullet,
+          rationale: `Direct match: verified in your active skills inventory and project tech stack.`
+        });
+      } else {
+        missingGaps.push(check.name);
+        gapBridges.push({
+          skill: check.name,
+          isMet: false,
+          bridgedByProject: check.bridgeProj,
+          evidenceBullet: check.bridgeBullet,
+          rationale: check.bridgeRationale
+        });
+      }
     }
   }
 
@@ -269,6 +290,7 @@ export function runGroundTruthMatcher(posting: Posting, user: UserProfile): Matc
     relevant_capabilities: matchedSkillsList.slice(0, 8),
     key_requirements: keyRequirements.length > 0 ? keyRequirements : ['Core Systems Programming', 'Data Structures & Algorithms'],
     missing_or_gap_skills: missingGaps,
+    gap_bridges: gapBridges,
     recommended_project_ids: topProjects.map(p => p.projectId),
     recommendations: topProjects,
     matched_experiences: matchedExperiences.slice(0, 2),

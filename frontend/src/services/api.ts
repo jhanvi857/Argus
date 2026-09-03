@@ -353,6 +353,13 @@ export class ArgusDataService {
     return computed;
   }
 
+  public static getCachedMatchForPosting(postingId: number): MatchResult | null {
+    const user = this.getCurrentUser();
+    const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
+    const userMatches = this.load<Record<number, MatchResult>>(key, {});
+    return userMatches[postingId] || null;
+  }
+
   public static async getMatchForPostingAsync(posting: Posting, forceRecalculate = false): Promise<MatchResult> {
     const user = this.getCurrentUser();
     const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
@@ -373,8 +380,19 @@ export class ArgusDataService {
         const mr = data.match_result;
         if (mr) {
           const computed = runGroundTruthMatcher(posting, user);
-          if (mr.recommended_project_ids) {
+          if (mr.recommended_project_ids && mr.recommended_project_ids.length > 0) {
             computed.recommended_project_ids = mr.recommended_project_ids;
+            const projectObjs = (user.projects || []).filter(p => mr.recommended_project_ids.includes(p.id));
+            if (projectObjs.length > 0) {
+              computed.recommendations = projectObjs.map(p => ({
+                projectId: p.id,
+                project: p,
+                score: 95,
+                matchingKeywords: mr.suggested_keywords || [],
+                recommendedBullets: p.quantified_bullets || [],
+                rationale: `AI Matcher selected ${p.name} as primary proof of capability for ${posting.title}.`
+              }));
+            }
           }
           if (mr.rationale) {
             computed.overall_fit_summary = mr.rationale;
@@ -455,6 +473,11 @@ export class ArgusDataService {
         stage: app.stage,
         notes: app.notes,
         oa_date: app.oa_date,
+        interview_date: app.interview_date,
+        interview_round: app.interview_round,
+        interview_questions: app.interview_questions,
+        experience_reflection: app.experience_reflection,
+        offer_details: app.offer_details,
         referral_status: app.referral_status,
         resume_version: app.resume_version
       })
@@ -544,7 +567,18 @@ export class ArgusDataService {
         if (Array.isArray(data) && data.length > 0) {
           const current = this.getPostings();
           const merged: Posting[] = data.map((rem: any) => {
-            const loc = current.find(p => p.id === rem.id);
+            const existing = current.find(p => p.id === rem.id);
+            let locStr = 'Multiple Locations';
+            if (typeof rem.location === 'string' && rem.location.trim()) {
+              locStr = rem.location.trim();
+            } else if (rem.location && typeof rem.location === 'object' && rem.location.name) {
+              locStr = String(rem.location.name);
+            } else if (rem.raw_json && typeof rem.raw_json.location === 'string') {
+              locStr = rem.raw_json.location;
+            } else if (rem.raw_json?.location?.name) {
+              locStr = String(rem.raw_json.location.name);
+            }
+
             return {
               id: rem.id,
               company_id: rem.company_id,
@@ -552,14 +586,15 @@ export class ArgusDataService {
               external_id: rem.external_id || String(rem.id),
               title: rem.title,
               team: rem.team || 'Software Engineering',
-              location: rem.location || 'Multiple Locations',
+              location: locStr,
               url: rem.url,
               first_seen_at: rem.first_seen_at || new Date().toISOString(),
               last_seen_at: rem.last_seen_at || new Date().toISOString(),
-              status: loc ? loc.status : (rem.status || 'new'),
+              status: existing ? existing.status : (rem.status || 'new'),
               relevant: rem.relevant ?? true,
               deadline: rem.deadline,
               notified_at: rem.notified_at,
+              required_skills: rem.required_skills || [],
               raw_json: rem.raw_json
             };
           });
@@ -580,11 +615,11 @@ export class ArgusDataService {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           const user = this.getCurrentUser();
-          const targetIds = new Set(user.preferences?.target_company_ids || []);
+          const targetIds = new Set(user?.preferences?.target_company_ids || []);
           const postings = this.getPostings();
 
           const companies: Company[] = data.map((c: any) => {
-            const compPostings = postings.filter(p => p.company_id === c.id || p.company_name.toLowerCase() === c.name.toLowerCase());
+            const compPostings = postings.filter(p => p.company_id === c.id || (p.company_name && c.name && p.company_name.toLowerCase() === c.name.toLowerCase()));
             const newCount = compPostings.filter(p => p.status === 'new' && p.relevant).length;
             return {
               id: c.id,

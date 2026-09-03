@@ -63,16 +63,38 @@ export const App: React.FC = () => {
     setTelemetry(ArgusDataService.getTelemetry());
   }, []);
 
+  const syncBackend = useCallback(async () => {
+    try {
+      await ArgusDataService.syncRemotePostings();
+      await ArgusDataService.syncRemoteCompanies();
+      refreshData();
+    } catch (err) {
+      console.warn('Backend sync warning:', err);
+    }
+  }, [refreshData]);
+
   useEffect(() => {
     refreshData();
+    // Automatically synchronize live postings & companies from PostgreSQL on startup
+    syncBackend();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncBackend();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const unsubscribe = AuthService.subscribe((user) => {
       setCurrentUser(user);
       setAllUsers(AuthService.getAllUsers());
-      setCompanies(ArgusDataService.getCompanies());
-      setApplications(ArgusDataService.getApplications());
+      refreshData();
     });
-    return unsubscribe;
-  }, [refreshData]);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshData, syncBackend]);
 
   // Derived Counts
   const newRelevantPostingsCount = postings.filter(p => p.status === 'new' && p.relevant).length;
@@ -83,6 +105,9 @@ export const App: React.FC = () => {
   const handleNavigate = (route: AppRoute) => {
     setCurrentRoute(route);
     window.scrollTo(0, 0);
+    if (route === 'opportunities' || route === 'dashboard') {
+      syncBackend();
+    }
   };
 
   const handleSwitchUser = (userId: string) => {

@@ -18,6 +18,96 @@ interface OpportunitiesViewProps {
   onSearchChange: (q: string) => void;
 }
 
+interface LocationPreset {
+  id: string;
+  label: string;
+  keywords: string[];
+}
+
+const LOCATION_PRESETS: LocationPreset[] = [
+  { id: 'all', label: 'All Global Locations', keywords: [] },
+  { 
+    id: 'us', 
+    label: 'United States (US)', 
+    keywords: ['united states', 'usa', 'us', 'san francisco', 'new york', 'seattle', 'chicago', 'austin', 'sunnyvale', 'mountain view', 'menlo park', 'cupertino', 'palo alto', 'cambridge, ma', 'boston', 'california', 'texas', 'washington', 'berkeley', 'los angeles', 'redmond'] 
+  },
+  { 
+    id: 'india', 
+    label: 'India', 
+    keywords: ['india', 'bengaluru', 'bangalore', 'hyderabad', 'gurugram', 'gurgaon', 'noida', 'pune', 'mumbai', 'delhi', 'chennai', 'kolkata'] 
+  },
+  { 
+    id: 'uk', 
+    label: 'United Kingdom (UK)', 
+    keywords: ['uk', 'united kingdom', 'london', 'england', 'cambridge', 'edinburgh', 'oxford', 'manchester'] 
+  },
+  { 
+    id: 'ireland', 
+    label: 'Ireland', 
+    keywords: ['ireland', 'dublin', 'cork', 'galway'] 
+  },
+  { 
+    id: 'germany', 
+    label: 'Germany', 
+    keywords: ['germany', 'berlin', 'munich', 'frankfurt', 'hamburg', 'stuttgart', 'walldorf'] 
+  },
+  { 
+    id: 'switzerland', 
+    label: 'Switzerland', 
+    keywords: ['switzerland', 'zurich', 'geneva', 'lausanne', 'basel'] 
+  },
+  { 
+    id: 'canada', 
+    label: 'Canada', 
+    keywords: ['canada', 'toronto', 'vancouver', 'waterloo', 'montreal', 'ottawa'] 
+  },
+  { 
+    id: 'singapore', 
+    label: 'Singapore', 
+    keywords: ['singapore'] 
+  },
+  { 
+    id: 'netherlands', 
+    label: 'Netherlands', 
+    keywords: ['netherlands', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven'] 
+  },
+  { 
+    id: 'france', 
+    label: 'France', 
+    keywords: ['france', 'paris', 'lyon', 'toulouse', 'grenoble'] 
+  },
+  { 
+    id: 'australia', 
+    label: 'Australia', 
+    keywords: ['australia', 'sydney', 'melbourne', 'brisbane'] 
+  },
+  { 
+    id: 'japan', 
+    label: 'Japan', 
+    keywords: ['japan', 'tokyo', 'osaka', 'kyoto'] 
+  },
+  { 
+    id: 'poland', 
+    label: 'Poland', 
+    keywords: ['poland', 'warsaw', 'krakow', 'wroclaw'] 
+  },
+  { 
+    id: 'israel', 
+    label: 'Israel', 
+    keywords: ['israel', 'tel aviv', 'haifa', 'herzliya', 'jerusalem'] 
+  },
+  { 
+    id: 'uae', 
+    label: 'United Arab Emirates (UAE)', 
+    keywords: ['uae', 'united arab emirates', 'dubai', 'abu dhabi'] 
+  },
+  { 
+    id: 'remote', 
+    label: 'Remote / Virtual', 
+    keywords: ['remote', 'virtual', 'work from home', 'anywhere'] 
+  }
+];
+
 export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   postings,
   companies,
@@ -30,23 +120,61 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   const [filterOnlyRelevant, setFilterOnlyRelevant] = useState<boolean>(true);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
 
+  // Helper to test if a posting matches a country/region preset
+  const matchesLocationPreset = (p: Posting, presetId: string): boolean => {
+    if (presetId === 'all') return true;
+    const preset = LOCATION_PRESETS.find(lp => lp.id === presetId);
+    if (!preset || preset.keywords.length === 0) return true;
+    const locStr = typeof p.location === 'string' ? p.location : (p.location as any)?.name || 'Multiple Locations';
+    const text = (locStr + ' ' + (p.title || '')).toLowerCase();
+    return preset.keywords.some(k => {
+      if (k.length <= 3) {
+        return new RegExp(`\\b${k}\\b`, 'i').test(text);
+      }
+      return text.includes(k);
+    });
+  };
+
+  const getLocationCount = (presetId: string): number => {
+    if (presetId === 'all') return postings.length;
+    return postings.filter(p => matchesLocationPreset(p, presetId)).length;
+  };
+
   // Filter list
   const filteredPostings = postings.filter(p => {
     if (filterOnlyRelevant && !p.relevant) return false;
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     if (selectedCompanyId !== null && p.company_id !== selectedCompanyId) return false;
-    if (selectedLocation !== 'all' && !p.location.toLowerCase().includes(selectedLocation.toLowerCase())) return false;
+    if (selectedLocation !== 'all' && !matchesLocationPreset(p, selectedLocation)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const matchTitle = p.title.toLowerCase().includes(q);
-      const matchComp = p.company_name.toLowerCase().includes(q);
-      const matchTeam = p.team.toLowerCase().includes(q);
-      const matchLoc = p.location.toLowerCase().includes(q);
-      const matchSkills = (p.required_skills || []).some(s => s.toLowerCase().includes(q));
+      const locStr = typeof p.location === 'string' ? p.location : (p.location as any)?.name || 'Multiple Locations';
+      const matchTitle = (p.title || '').toLowerCase().includes(q);
+      const matchComp = (p.company_name || '').toLowerCase().includes(q);
+      const matchTeam = (p.team || '').toLowerCase().includes(q);
+      const matchLoc = locStr.toLowerCase().includes(q);
+      const matchSkills = (p.required_skills || []).some(s => (s || '').toLowerCase().includes(q));
       if (!matchTitle && !matchComp && !matchTeam && !matchLoc && !matchSkills) return false;
     }
     return true;
   });
+
+  const displayCompanies = companies.length > 0 
+    ? companies 
+    : Array.from(new Set(postings.map(p => p.company_name))).filter(Boolean).map((name, idx) => {
+        const matching = postings.filter(p => p.company_name === name);
+        return {
+          id: matching[0]?.company_id || (idx + 1),
+          name,
+          category: 'enterprise_mnc' as any,
+          ats_type: 'custom' as any,
+          careers_page_url: '#',
+          is_healthy: true,
+          enabled: true,
+          new_postings_count: matching.filter(p => p.status === 'new' && p.relevant).length,
+          total_postings_count: matching.length
+        } as Company;
+      });
 
   const statusCounts = {
     all: postings.length,
@@ -147,8 +275,8 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
               onChange={e => setSelectedCompanyId(e.target.value === 'all' ? null : Number(e.target.value))}
               style={{ fontSize: '12.5px', padding: '6px 10px', height: '34px' }}
             >
-              <option value="all">All Companies ({companies.length})</option>
-              {companies.map(c => (
+              <option value="all">All Companies ({displayCompanies.length})</option>
+              {displayCompanies.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.total_postings_count})
                 </option>
@@ -159,14 +287,16 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
               className="form-select"
               value={selectedLocation}
               onChange={e => setSelectedLocation(e.target.value)}
-              style={{ fontSize: '12.5px', padding: '6px 10px', height: '34px' }}
+              style={{ fontSize: '12.5px', padding: '6px 10px', height: '34px', minWidth: '185px' }}
             >
-              <option value="all">All Locations</option>
-              <option value="bengaluru">Bengaluru</option>
-              <option value="hyderabad">Hyderabad</option>
-              <option value="gurugram">Gurugram</option>
-              <option value="united states">United States</option>
-              <option value="remote">Remote</option>
+              {LOCATION_PRESETS.map(preset => {
+                const count = getLocationCount(preset.id);
+                return (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label} {preset.id !== 'all' ? `(${count})` : `(${postings.length})`}
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
@@ -249,7 +379,7 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
 
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
                       <span className="badge-tag">{posting.team}</span>
-                      <span className="badge-tag">{posting.location}</span>
+                      <span className="badge-tag">{typeof posting.location === 'string' ? posting.location : (posting.location as any)?.name || 'Multiple Locations'}</span>
                       {posting.stipend_estimate && (
                         <span className="badge-tag-navy">{posting.stipend_estimate}</span>
                       )}

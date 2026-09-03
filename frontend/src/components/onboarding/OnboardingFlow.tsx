@@ -385,7 +385,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                   Eligible Locations
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {['India', 'Bengaluru', 'Hyderabad', 'United States', 'Remote', 'Singapore', 'London'].map(loc => {
+                  {['United States (US)', 'India', 'United Kingdom (UK)', 'Ireland', 'Germany', 'Switzerland', 'Canada', 'Singapore', 'Netherlands', 'France', 'Australia', 'Japan', 'Poland', 'Israel', 'UAE', 'Remote / Virtual'].map(loc => {
                     const isSelected = locationsList.includes(loc);
                     return (
                       <button

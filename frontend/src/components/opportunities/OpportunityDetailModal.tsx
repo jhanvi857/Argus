@@ -3,23 +3,78 @@ import {
   X,
   Sparkles,
   ArrowLeft,
-  Bookmark,
   MapPin,
-  Loader2
+  Loader2,
+  RotateCw,
+  ExternalLink,
+  Check,
+  MessageSquare,
+  FileText
 } from 'lucide-react';
-import { Posting, MatchResult, UserProfile, PostingStatus } from '../../types';
+import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus } from '../../types';
 import { ArgusDataService } from '../../services/api';
 
-interface OpportunityDetailModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  posting: Posting | null;
-  currentUser: UserProfile;
-  initialTab?: 'jd' | 'matcher' | 'application';
-  onOpenPortfolio: () => void;
-  onApplicationSaved: () => void;
-  onStatusChange: (postingId: number, status: PostingStatus) => void;
-}
+const formatLocation = (loc: any): string => {
+  if (!loc) return 'Multiple Locations';
+  const str = typeof loc === 'string' ? loc : loc.name || '';
+  if (!str.trim()) return 'Multiple Locations';
+  
+  // Format long location lists (e.g. "Berkeley, California, United States; San Francisco, California, United States")
+  const parts = str.split(';').map((p: string) => p.trim()).filter(Boolean);
+  const cleanParts = parts.map((p: string) => 
+    p.replace(/,\s*United States/gi, '')
+     .replace(/,\s*California/gi, ', CA')
+     .replace(/,\s*New York/gi, ', NY')
+     .replace(/,\s*Washington/gi, ', WA')
+     .replace(/,\s*Texas/gi, ', TX')
+     .replace(/,\s*Massachusetts/gi, ', MA')
+     .replace(/,\s*Illinois/gi, ', IL')
+  );
+
+  if (cleanParts.length > 2) {
+    return `${cleanParts[0]} +${cleanParts.length - 1} locations`;
+  }
+  return cleanParts.join(' · ');
+};
+
+const FormattedRationale: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  const parseInlineMarkdown = (str: string) => {
+    const parts = str.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <strong key={idx} style={{ color: 'var(--gray-900)', fontWeight: 600 }}>
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: 'var(--gray-700)', lineHeight: 1.55 }}>
+      {lines.map((line, idx) => {
+        const isBullet = line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ');
+        const cleanText = isBullet ? line.replace(/^[-*•]\s+/, '') : line;
+
+        if (isBullet) {
+          return (
+            <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+              <span style={{ color: 'var(--primary)', fontWeight: 800, lineHeight: 1.4 }}>•</span>
+              <div style={{ flex: 1 }}>{parseInlineMarkdown(cleanText)}</div>
+            </div>
+          );
+        }
+        return <p key={idx} style={{ margin: 0 }}>{parseInlineMarkdown(cleanText)}</p>;
+      })}
+    </div>
+  );
+};
 
 const getCompanyLogoClass = (name: string) => {
   const key = name.toLowerCase().replace(/\s+/g, '');
@@ -29,9 +84,22 @@ const getCompanyLogoClass = (name: string) => {
     amazon: 'company-logo-amazon',
     microsoft: 'company-logo-microsoft',
     'goldmansachs': 'company-logo-goldman',
+    'jpmorganchase': 'company-logo-jpmorgan',
+    citadel: 'company-logo-citadel',
   };
   return map[key] || 'company-logo-default';
 };
+
+interface OpportunityDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  posting: Posting | null;
+  currentUser: UserProfile;
+  initialTab?: 'jd' | 'matcher' | 'application';
+  onOpenPortfolio?: () => void;
+  onApplicationSaved: () => void;
+  onStatusChange: (postingId: number, status: PostingStatus) => void;
+}
 
 export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   isOpen,
@@ -40,7 +108,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   currentUser,
   initialTab: _initialTab = 'matcher',
   onOpenPortfolio,
-  onApplicationSaved: _onApplicationSaved,
+  onApplicationSaved,
   onStatusChange
 }) => {
   if (!isOpen || !posting) return null;
@@ -48,25 +116,129 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isMatching, setIsMatching] = useState<boolean>(false);
   const [matchStep, setMatchStep] = useState<string>('idle');
+  
+  // Application State
+  const [currentApp, setCurrentApp] = useState<Application | null>(null);
+  const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
+  const [appStage, setAppStage] = useState<ApplicationStage>('applied');
+  const [appReferral, setAppReferral] = useState<ReferralStatus>('none');
+  const [appResume, setAppResume] = useState<string>('');
+  const [appOaDate, setAppOaDate] = useState<string>('');
+  const [appInterviewDate, setAppInterviewDate] = useState<string>('');
+  const [appInterviewRound, setAppInterviewRound] = useState<string>('');
+  const [appInterviewQuestions, setAppInterviewQuestions] = useState<string>('');
+  const [appExperienceReflection, setAppExperienceReflection] = useState<string>('');
+  const [appOfferDetails, setAppOfferDetails] = useState<string>('');
+  const [appNotes, setAppNotes] = useState<string>('');
+  const [isSavedToast, setIsSavedToast] = useState<boolean>(false);
 
   useEffect(() => {
-    runMatchComputation();
-  }, [posting, currentUser]);
+    if (!posting) return;
+    const existing = ArgusDataService.getApplication(posting.id);
+    if (existing) {
+      setCurrentApp(existing);
+      setAppStage(existing.stage);
+      setAppReferral(existing.referral_status);
+      setAppResume(existing.resume_version || '');
+      setAppOaDate(existing.oa_date || '');
+      setAppInterviewDate(existing.interview_date || '');
+      setAppInterviewRound(existing.interview_round || '');
+      setAppInterviewQuestions(existing.interview_questions || '');
+      setAppExperienceReflection(existing.experience_reflection || '');
+      setAppOfferDetails(existing.offer_details || '');
+      setAppNotes(existing.notes || '');
+    } else {
+      setCurrentApp(null);
+      setAppStage('applied');
+      setAppReferral('none');
+      setAppResume('');
+      setAppOaDate('');
+      setAppInterviewDate('');
+      setAppInterviewRound('');
+      setAppInterviewQuestions('');
+      setAppExperienceReflection('');
+      setAppOfferDetails('');
+      setAppNotes('');
+    }
+  }, [posting?.id]);
 
-  const runMatchComputation = async () => {
+  useEffect(() => {
+    runMatchComputation(false);
+  }, [posting?.id]);
+
+  const runMatchComputation = async (force = false) => {
+    if (!posting) return;
+
+    if (!force) {
+      const cached = ArgusDataService.getCachedMatchForPosting(posting.id);
+      if (cached) {
+        setMatchResult(cached);
+        setIsMatching(false);
+        return;
+      }
+    }
+
     setIsMatching(true);
-    setMatchStep('Reviewing saved projects in candidate portfolio...');
-    await new Promise(r => setTimeout(r, 200));
+    setMatchStep('Synthesizing fit with Groq LLM against portfolio...');
 
-    setMatchStep('Evaluating technical stack, tags, and quantified bullets...');
-    await new Promise(r => setTimeout(r, 200));
-
-    setMatchStep('Synthesizing ground-truth fit score and recommended evidence...');
-    await new Promise(r => setTimeout(r, 150));
-
-    const result = await ArgusDataService.getMatchForPostingAsync(posting, true);
+    const result = await ArgusDataService.getMatchForPostingAsync(posting, force);
     setMatchResult(result);
     setIsMatching(false);
+  };
+
+  const handleQuickStageChange = (newStage: ApplicationStage) => {
+    if (!posting) return;
+    setAppStage(newStage);
+
+    const saved = ArgusDataService.saveApplication({
+      posting_id: posting.id,
+      user_id: currentUser.id,
+      stage: newStage,
+      referral_status: appReferral,
+      resume_version: appResume,
+      oa_date: appOaDate || null,
+      interview_date: appInterviewDate || null,
+      interview_round: appInterviewRound,
+      interview_questions: appInterviewQuestions,
+      experience_reflection: appExperienceReflection,
+      offer_details: appOfferDetails,
+      notes: appNotes,
+      applied_date: currentApp?.applied_date || new Date().toISOString().split('T')[0]
+    });
+
+    setCurrentApp(saved);
+    onStatusChange(posting.id, newStage === 'interested' ? 'reviewed' : 'applied');
+    onApplicationSaved();
+    setIsSavedToast(true);
+    setTimeout(() => setIsSavedToast(false), 2500);
+  };
+
+  const handleSaveExperienceLog = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!posting) return;
+
+    const saved = ArgusDataService.saveApplication({
+      posting_id: posting.id,
+      user_id: currentUser.id,
+      stage: appStage,
+      referral_status: appReferral,
+      resume_version: appResume,
+      oa_date: appOaDate || null,
+      interview_date: appInterviewDate || null,
+      interview_round: appInterviewRound,
+      interview_questions: appInterviewQuestions,
+      experience_reflection: appExperienceReflection,
+      offer_details: appOfferDetails,
+      notes: appNotes,
+      applied_date: currentApp?.applied_date || new Date().toISOString().split('T')[0]
+    });
+
+    setCurrentApp(saved);
+    onStatusChange(posting.id, appStage === 'interested' ? 'reviewed' : 'applied');
+    onApplicationSaved();
+    setIsLogModalOpen(false);
+    setIsSavedToast(true);
+    setTimeout(() => setIsSavedToast(false), 2500);
   };
 
   const requiredSkills = posting.required_skills || ['Backend', 'Distributed Systems', 'Go', 'Linux', 'Cloud'];
@@ -80,78 +252,188 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
     'Participate in code reviews and design discussions'
   ];
 
+  const formattedLocation = formatLocation(posting.location);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-container"
-        style={{ maxWidth: '1060px', height: '90vh', display: 'flex', flexDirection: 'column' }}
+        style={{ maxWidth: '1080px', height: '90vh', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Close button */}
-        <div style={{
-          position: 'absolute', top: '16px', right: '16px', zIndex: 10
-        }}>
-          <button className="btn-ghost btn-sm" onClick={onClose} style={{ padding: '4px' }}>
+        {/* Modal Close Button */}
+        <div style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 10 }}>
+          <button className="btn-ghost btn-sm" onClick={onClose} style={{ padding: '6px' }}>
             <X size={18} />
           </button>
         </div>
 
         <div className="modal-body" style={{ padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Back link */}
-          <div style={{ padding: '20px 28px 0' }}>
-            <button className="back-link" onClick={onClose}>
+          {/* Top Bar: Back Link & Quick Confirmation Toast */}
+          <div style={{ padding: '16px 28px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <button className="back-link" onClick={onClose} style={{ margin: 0 }}>
               <ArrowLeft size={14} />
-              <span>Back to Jobs</span>
+              <span>Back to Opportunities</span>
             </button>
+            {isSavedToast && (
+              <span style={{ fontSize: '12px', color: '#15803d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Check size={14} /> Application status updated!
+              </span>
+            )}
           </div>
 
           {/* Main content area - scrollable */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '0 28px 28px' }}>
-            <div className="opportunity-detail-grid">
-              {/* ── LEFT: Job Details ── */}
-              <div>
-                {/* Job Header */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '20px' }}>
-                  <div className={`company-logo ${getCompanyLogoClass(posting.company_name)}`}
-                    style={{ borderRadius: 'var(--border-radius-md)' }}>
+          <div style={{ flex: 1, overflow: 'auto', padding: '12px 28px 28px' }}>
+            {/* ── UNIFIED CLEAN HEADER ── */}
+            <div style={{
+              marginBottom: '20px',
+              paddingBottom: '16px',
+              borderBottom: '1px solid var(--gray-200)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              {/* Row 1: Company Badge, Location, Team, and Action Buttons */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <div className={`company-logo company-logo-sm ${getCompanyLogoClass(posting.company_name)}`}
+                    style={{ borderRadius: 'var(--border-radius-sm)', width: '32px', height: '32px', fontSize: '14px' }}>
                     {posting.company_name.charAt(0)}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <h1 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--gray-900)', marginBottom: '4px' }}>
-                      {posting.title}
-                    </h1>
-                    <div style={{ fontSize: '13px', color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>{posting.company_name}</span>
-                      <span>·</span>
-                      <span>{posting.location}</span>
-                      <span>·</span>
-                      <span>{posting.team || 'Internship'}</span>
-                    </div>
-                  </div>
+                  <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--gray-900)' }}>
+                    {posting.company_name}
+                  </span>
+                  <span style={{ color: 'var(--gray-300)' }}>•</span>
+                  <span style={{ fontSize: '13px', color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <MapPin size={13} color="var(--gray-400)" />
+                    {formattedLocation}
+                  </span>
+                  {posting.team && (
+                    <>
+                      <span style={{ color: 'var(--gray-300)' }}>•</span>
+                      <span className="badge-tag" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                        {posting.team}
+                      </span>
+                    </>
+                  )}
+                </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      className="btn-primary btn-sm"
-                      onClick={() => {
-                        onStatusChange(posting.id, 'reviewed');
-                        runMatchComputation();
+                {/* Primary Action Buttons on Right */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {posting.url && (
+                    <a
+                      href={posting.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="btn-secondary btn-sm"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        borderRadius: 'var(--border-radius-full)',
+                        fontSize: '12.5px',
+                        padding: '6px 14px'
                       }}
-                      style={{ borderRadius: 'var(--border-radius-full)' }}
                     >
-                      Interested
-                    </button>
-                    <button className="btn-ghost btn-sm" style={{ padding: '6px' }}>
-                      <Bookmark size={16} />
-                    </button>
+                      <span>Apply on ATS</span>
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+
+                  <button
+                    className="btn-primary btn-sm"
+                    onClick={() => {
+                      onStatusChange(posting.id, 'reviewed');
+                      runMatchComputation(true);
+                    }}
+                    style={{ borderRadius: 'var(--border-radius-full)', fontSize: '12.5px', padding: '6px 14px' }}
+                  >
+                    <span>Run AI Match</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Full-width Clean Job Title */}
+              <h1 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--gray-900)', margin: '0', lineHeight: 1.3 }}>
+                {posting.title}
+              </h1>
+
+              {/* Row 3: Sleek Stage Tracker Strip */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                background: 'var(--gray-50)',
+                padding: '8px 12px',
+                borderRadius: 'var(--border-radius-md)',
+                border: '1px solid var(--gray-200)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-600)' }}>
+                    Application Stage:
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'applied', label: 'Applied' },
+                      { id: 'oa', label: 'OA Assessment' },
+                      { id: 'interview', label: 'Interview' },
+                      { id: 'offer', label: 'Offer 🎉' }
+                    ].map(s => {
+                      const isSelected = currentApp?.stage === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => handleQuickStageChange(s.id as ApplicationStage)}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: 'var(--border-radius-full)',
+                            border: isSelected ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                            background: isSelected ? 'var(--primary)' : 'var(--bg-white)',
+                            color: isSelected ? '#ffffff' : 'var(--gray-600)',
+                            fontSize: '11.5px',
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {isSelected && '✓ '}{s.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
+                <button
+                  onClick={() => setIsLogModalOpen(true)}
+                  className="btn-ghost btn-sm"
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--primary)',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '3px 8px'
+                  }}
+                >
+                  <MessageSquare size={13} />
+                  <span>{currentApp?.interview_questions ? 'Edit Interview Log' : '+ Log Interview Experience'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ── TWO-COLUMN GRID (Job Info Left, AI Match Right) ── */}
+            <div className="opportunity-detail-grid">
+              {/* ── LEFT: Clean Job Details ── */}
+              <div>
                 {/* Skill Tags */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
                   {requiredSkills.map((skill, i) => (
                     <span key={i} className="badge-tag-navy" style={{
-                      fontSize: '12px',
-                      padding: '4px 12px',
+                      fontSize: '11.5px',
+                      padding: '3px 10px',
                       borderRadius: 'var(--border-radius-full)'
                     }}>
                       {skill}
@@ -159,22 +441,64 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                   ))}
                 </div>
 
+                {/* Logged Interview & Experience Callout if exists */}
+                {currentApp && (currentApp.interview_questions || currentApp.experience_reflection || currentApp.offer_details) && (
+                  <div style={{
+                    marginBottom: '20px',
+                    padding: '12px 14px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 'var(--border-radius-md)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <FileText size={13} color="var(--primary)" />
+                        Your Interview Notes & Logged Questions
+                      </span>
+                      <button
+                        onClick={() => setIsLogModalOpen(true)}
+                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    {currentApp.interview_questions && (
+                      <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                        <strong>Questions:</strong> {currentApp.interview_questions}
+                      </p>
+                    )}
+                    {currentApp.experience_reflection && (
+                      <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                        <strong>Takeaways:</strong> {currentApp.experience_reflection}
+                      </p>
+                    )}
+                    {currentApp.offer_details && (
+                      <p style={{ margin: 0, fontSize: '12px', color: '#15803d', fontWeight: 600 }}>
+                        🎉 <strong>Offer:</strong> {currentApp.offer_details}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Job Description */}
                 <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '10px' }}>
-                    Job description
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
+                    Job Description
                   </h3>
-                  <p style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.7 }}>
+                  <p style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.7, margin: 0 }}>
                     {jdText}
                   </p>
                 </div>
 
                 {/* Key Responsibilities */}
                 <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '10px' }}>
-                    Key responsibilities
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
+                    Key Responsibilities
                   </h3>
-                  <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <ul style={{ paddingLeft: '18px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {responsibilities.map((r, i) => (
                       <li key={i} style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.5 }}>
                         {r}
@@ -182,137 +506,166 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                     ))}
                   </ul>
                 </div>
-
-                {/* Location */}
-                <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
-                    Location
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13.5px', color: 'var(--gray-600)' }}>
-                    <MapPin size={14} />
-                    <span>{posting.location} (Hybrid)</span>
-                  </div>
-                </div>
               </div>
 
               {/* ── RIGHT: AI Match Recommendation ── */}
               <div>
-                <div className="card-surface" style={{ padding: '24px', position: 'sticky', top: '0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div className="card-surface" style={{ padding: '20px', position: 'sticky', top: '0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', margin: 0 }}>
                         AI Match Recommendation
                       </h3>
                       {(matchResult?.status === 'needs_review' || posting.status === 'needs_review') && (
                         <span style={{
-                          fontSize: '11px', fontWeight: 700, color: '#b45309',
+                          fontSize: '10.5px', fontWeight: 700, color: '#b45309',
                           background: '#fef3c7', border: '1px solid #fde68a',
-                          padding: '2px 8px', borderRadius: 'var(--border-radius-full)',
-                          textTransform: 'uppercase', letterSpacing: '0.5px'
+                          padding: '1px 6px', borderRadius: 'var(--border-radius-full)',
+                          textTransform: 'uppercase'
                         }}>
                           Needs Review
                         </span>
                       )}
                     </div>
-                    <span style={{
-                      fontSize: '10px', fontWeight: 700, color: 'var(--primary)',
-                      background: 'rgba(173, 40, 49, 0.1)',
-                      padding: '2px 8px', borderRadius: 'var(--border-radius-full)',
-                      textTransform: 'uppercase', letterSpacing: '0.5px'
-                    }}>
-                      Beta
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        className="btn-ghost btn-sm"
+                        onClick={() => runMatchComputation(true)}
+                        disabled={isMatching}
+                        title="Re-run matching with LLM"
+                        style={{ padding: '4px' }}
+                      >
+                        <RotateCw size={13} className={isMatching ? 'animate-spin' : ''} />
+                      </button>
+                      <span className="badge-beta">BETA</span>
+                    </div>
                   </div>
 
-                  {(matchResult?.status === 'needs_review' || posting.status === 'needs_review') && (
-                    <div style={{
-                      padding: '10px 14px',
-                      marginBottom: '16px',
-                      borderRadius: 'var(--border-radius-md)',
-                      background: '#fffbeb',
-                      border: '1px solid #fde68a',
-                      fontSize: '12px',
-                      color: '#92400e',
-                      lineHeight: 1.5
-                    }}>
-                      <strong>Validation Flag:</strong> {matchResult?.validation_error || 'Match recommendations flagged for manual confirmation by candidate.'}
-                    </div>
-                  )}
-
                   {isMatching ? (
-                    <div style={{ textAlign: 'center', padding: '40px 16px' }}>
-                      <Loader2 size={28} className="animate-spin" color="var(--primary)" style={{ margin: '0 auto 12px' }} />
-                      <div style={{ fontSize: '13px', color: 'var(--gray-600)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+                      <Loader2 size={24} className="animate-spin" color="var(--primary)" style={{ margin: '0 auto 10px' }} />
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gray-900)', marginBottom: '4px' }}>
+                        Analyzing Job with Groq LLM
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--gray-500)' }}>
                         {matchStep}
                       </div>
                     </div>
-                  ) : matchResult && matchResult.recommendations.length > 0 ? (
+                  ) : matchResult ? (
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gray-500)', marginBottom: '14px' }}>
-                        Recommended Projects
+                      {/* Overall Fit Score */}
+                      <div style={{
+                        padding: '12px 14px',
+                        background: 'var(--primary-subtle)',
+                        borderRadius: 'var(--border-radius-md)',
+                        marginBottom: '14px',
+                        border: '1px solid rgba(173, 40, 49, 0.15)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-700)' }}>
+                            Grounded Match Alignment
+                          </span>
+                          <span style={{ fontSize: '17px', fontWeight: 800, color: 'var(--primary)' }}>
+                            {matchResult.overall_fit_score || 85}%
+                          </span>
+                        </div>
+                        <div className="progress-bar-container" style={{ height: '5px', marginBottom: '8px' }}>
+                          <div
+                            className="progress-bar-fill"
+                            style={{ width: `${matchResult.overall_fit_score || 85}%` }}
+                          />
+                        </div>
+                        {matchResult.rationale && (
+                          <FormattedRationale text={matchResult.rationale} />
+                        )}
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        {matchResult.recommendations.slice(0, 3).map((rec, index) => (
-                          <div key={rec.projectId} style={{
-                            padding: '14px',
-                            border: '1px solid var(--gray-200)',
-                            borderRadius: 'var(--border-radius-md)',
-                            background: 'var(--bg-white)'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '8px' }}>
-                              <span style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '14px',
-                                fontWeight: 800,
-                                color: 'var(--primary)',
-                                minWidth: '20px'
-                              }}>
-                                {index + 1}
-                              </span>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '4px' }}>
-                                  {rec.project.name}
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
-                                  {rec.project.tech_stack.slice(0, 3).map((t, i) => (
-                                    <span key={i} className="badge-tag" style={{ fontSize: '10.5px', padding: '2px 6px' }}>
-                                      {t}
-                                    </span>
-                                  ))}
-                                  {rec.matchingKeywords.length > 0 && (
-                                    <span style={{ fontSize: '10.5px', color: 'var(--primary)', fontWeight: 600 }}>
-                                      +{rec.matchingKeywords.length}
-                                    </span>
-                                  )}
-                                </div>
-                                <p style={{ fontSize: '12px', color: 'var(--gray-500)', lineHeight: 1.4 }}>
-                                  {rec.rationale}
-                                </p>
-                              </div>
-                            </div>
+                      {/* Recommended Projects with Quantified Resume Bullets */}
+                      {matchResult.recommendations && matchResult.recommendations.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                            Recommended Projects & Resume Bullets
                           </div>
-                        ))}
-                      </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {matchResult.recommendations.slice(0, 3).map((rec, index) => (
+                              <div key={rec.projectId} style={{
+                                padding: '10px 12px',
+                                border: '1px solid var(--gray-200)',
+                                borderRadius: 'var(--border-radius-md)',
+                                background: 'var(--bg-white)'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '4px' }}>
+                                  <span style={{
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    color: 'var(--primary)',
+                                    minWidth: '16px'
+                                  }}>
+                                    {index + 1}
+                                  </span>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                                      {rec.project.name}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', margin: '3px 0' }}>
+                                      {rec.project.tech_stack.slice(0, 3).map((t, i) => (
+                                        <span key={i} className="badge-tag" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
+                                          {t}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <p style={{ fontSize: '11px', color: 'var(--gray-600)', lineHeight: 1.35, margin: '2px 0 4px' }}>
+                                      {rec.rationale}
+                                    </p>
+
+                                    {/* Quantified Resume Bullets */}
+                                    {rec.recommendedBullets && rec.recommendedBullets.length > 0 && (
+                                      <div style={{
+                                        marginTop: '4px',
+                                        padding: '6px 8px',
+                                        background: 'var(--gray-50)',
+                                        borderRadius: 'var(--border-radius-sm)',
+                                        border: '1px solid var(--gray-200)'
+                                      }}>
+                                        <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: '2px' }}>
+                                          Featured Resume Bullet:
+                                        </div>
+                                        <ul style={{ margin: 0, paddingLeft: '12px', fontSize: '10.5px', color: 'var(--gray-700)', lineHeight: 1.35 }}>
+                                          {rec.recommendedBullets.slice(0, 2).map((b, bi) => (
+                                            <li key={bi}>{b}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <button
                         className="btn-primary"
                         onClick={onOpenPortfolio}
                         style={{
                           width: '100%',
-                          marginTop: '16px',
-                          borderRadius: 'var(--border-radius-sm)',
-                          padding: '10px'
+                          marginTop: '14px',
+                          borderRadius: 'var(--border-radius-full)',
+                          padding: '9px',
+                          fontSize: '13px'
                         }}
                       >
-                        View Full Match Details
+                        View Full Match in Portfolio
                       </button>
                     </div>
                   ) : (
                     <div style={{ textAlign: 'center', padding: '24px' }}>
-                      <Sparkles size={24} color="var(--gray-400)" style={{ margin: '0 auto 8px' }} />
-                      <p style={{ fontSize: '13px', color: 'var(--gray-500)' }}>
-                        Add projects to your portfolio to see match recommendations.
+                      <Sparkles size={20} color="var(--gray-400)" style={{ margin: '0 auto 6px' }} />
+                      <p style={{ fontSize: '12.5px', color: 'var(--gray-500)' }}>
+                        Click "Run AI Match" to evaluate your portfolio fit.
                       </p>
                     </div>
                   )}
@@ -322,6 +675,150 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ── DEDICATED CLEAN EXPERIENCE LOG MODAL ── */}
+      {isLogModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={() => setIsLogModalOpen(false)}>
+          <div className="modal-container" style={{ maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--gray-900)' }}>
+                  Log Interview Experience: {posting.company_name}
+                </h2>
+                <div style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
+                  {posting.title}
+                </div>
+              </div>
+              <button className="btn-ghost btn-sm" onClick={() => setIsLogModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveExperienceLog}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px 24px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                    Application Stage
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {[
+                      { id: 'applied', label: 'Applied' },
+                      { id: 'oa', label: 'OA Assessment' },
+                      { id: 'interview', label: 'Interview' },
+                      { id: 'offer', label: 'Offer 🎉' },
+                      { id: 'rejected', label: 'Rejected' }
+                    ].map(s => {
+                      const isSelected = appStage === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setAppStage(s.id as ApplicationStage)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: 'var(--border-radius-full)',
+                            border: isSelected ? '1.5px solid var(--primary)' : '1px solid var(--gray-300)',
+                            background: isSelected ? 'rgba(173, 40, 49, 0.1)' : 'var(--bg-white)',
+                            color: isSelected ? 'var(--primary)' : 'var(--gray-700)',
+                            fontSize: '12px',
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {isSelected && '✓ '}{s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                    Technical Questions Asked (OA / Interview)
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    value={appInterviewQuestions}
+                    onChange={e => setAppInterviewQuestions(e.target.value)}
+                    placeholder="e.g. 1. LeetCode 42 Trapping Rain Water. 2. System design for rate limiting. 3. Concurrency lock-free queue in Go."
+                    style={{ fontSize: '12.5px', resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                    Interview Experience & Key Takeaways
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    value={appExperienceReflection}
+                    onChange={e => setAppExperienceReflection(e.target.value)}
+                    placeholder="e.g. Interview went great! Interviewer liked the NioFlow project architecture. Need to practice write-ahead log compaction before Round 2."
+                    style={{ fontSize: '12.5px', resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {appStage === 'offer' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                    <label className="form-label" style={{ color: '#15803d', fontWeight: 700, fontSize: '12.5px', margin: 0 }}>
+                      🎉 Offer Details & Compensation
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={appOfferDetails}
+                      onChange={e => setAppOfferDetails(e.target.value)}
+                      placeholder="e.g. $65/hr stipend, $2,500/mo housing allowance, deadline Nov 15"
+                      style={{ fontSize: '12.5px', border: '1.5px solid #86efac', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', width: '100%' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                      OA Assessment Date
+                    </label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={appOaDate}
+                      onChange={e => setAppOaDate(e.target.value)}
+                      style={{ fontSize: '12.5px', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                      Interview Date / Round
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={appInterviewRound}
+                      onChange={e => setAppInterviewRound(e.target.value)}
+                      placeholder="e.g. Oct 14 - Technical Round 1"
+                      style={{ fontSize: '12.5px', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setIsLogModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  <span>Save Experience Log</span>
+                  <Check size={14} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

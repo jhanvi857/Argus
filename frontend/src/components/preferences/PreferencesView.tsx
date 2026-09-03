@@ -283,7 +283,7 @@ export const PreferencesView: React.FC<PreferencesViewProps> = ({
             </p>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {['India', 'Bengaluru', 'Hyderabad', 'United States', 'Remote', 'Singapore', 'London'].map(loc => {
+              {['United States (US)', 'India', 'United Kingdom (UK)', 'Ireland', 'Germany', 'Switzerland', 'Canada', 'Singapore', 'Netherlands', 'France', 'Australia', 'Japan', 'Poland', 'Israel', 'UAE', 'Remote / Virtual'].map(loc => {
                 const isSelected = locations.includes(loc);
                 return (
                   <button

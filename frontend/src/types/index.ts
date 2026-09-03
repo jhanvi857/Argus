@@ -229,6 +229,14 @@ export interface MatchedResume {
   rationale: string;
 }
 
+export interface GapBridge {
+  skill: string;
+  isMet: boolean;
+  bridgedByProject?: string;
+  evidenceBullet?: string;
+  rationale: string;
+}
+
 export interface MatchResult {
   id: number;
   posting_id: number;
@@ -238,6 +246,7 @@ export interface MatchResult {
   relevant_capabilities: string[];
   key_requirements: string[];
   missing_or_gap_skills: string[];
+  gap_bridges?: GapBridge[];
   recommended_project_ids: string[];
   recommendations: MatchRecommendation[];
   matched_experiences: MatchedExperience[];
@@ -269,11 +278,15 @@ export interface Application {
   posting?: Posting;
   resume_version?: string;
   oa_date?: string | null;
+  interview_date?: string | null;
+  interview_round?: string;
+  interview_questions?: string;
+  experience_reflection?: string;
+  offer_details?: string;
   referral_status: ReferralStatus;
   stage: ApplicationStage;
   notes?: string;
   applied_date?: string;
-  interview_date?: string;
   updated_at?: string;
 }
 

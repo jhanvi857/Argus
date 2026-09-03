@@ -272,7 +272,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {posting.title}
                         </div>
                         <div style={{ fontSize: '13px', color: 'var(--gray-500)', marginBottom: '8px' }}>
-                          {posting.company_name} · {posting.location}
+                          {posting.company_name} · {typeof posting.location === 'string' ? posting.location : (posting.location as any)?.name || 'Multiple Locations'}
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {posting.team && (
