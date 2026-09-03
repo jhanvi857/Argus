@@ -9,6 +9,7 @@ from .google import GoogleAdapter
 from .microsoft import MicrosoftAdapter
 from .goldman import GoldmanSachsAdapter
 from .eightfold import EightfoldAdapter
+from .custom import CustomCareersAdapter
 from .registry import get_adapter, register_adapter, ADAPTER_MAP
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "MicrosoftAdapter",
     "GoldmanSachsAdapter",
     "EightfoldAdapter",
+    "CustomCareersAdapter",
     "get_adapter",
     "register_adapter",
     "ADAPTER_MAP",

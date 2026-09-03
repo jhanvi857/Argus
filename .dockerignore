@@ -1,0 +1,12 @@
+.git
+.gitignore
+frontend/node_modules
+frontend/dist
+.gemini
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+venv
+.venv

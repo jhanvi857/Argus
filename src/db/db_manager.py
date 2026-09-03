@@ -460,6 +460,43 @@ class DatabaseManager:
                 )
             conn.commit()
 
+    def update_application_status(
+        self,
+        posting_id: int,
+        stage: str,
+        notes: Optional[str] = None,
+        oa_date: Optional[str] = None,
+        referral_status: Optional[str] = "none",
+        resume_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upserts an application tracking record for a job posting."""
+        clean_stage = stage.lower()
+        clean_referral = (referral_status or "none").lower()
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO applications (posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (posting_id) DO UPDATE
+                    SET stage = EXCLUDED.stage,
+                        notes = COALESCE(EXCLUDED.notes, applications.notes),
+                        oa_date = COALESCE(EXCLUDED.oa_date, applications.oa_date),
+                        referral_status = COALESCE(EXCLUDED.referral_status, applications.referral_status),
+                        resume_version = COALESCE(EXCLUDED.resume_version, applications.resume_version),
+                        updated_at = NOW()
+                    RETURNING id, posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at;
+                    """,
+                    (posting_id, clean_stage, notes, oa_date if oa_date else None, clean_referral, resume_version),
+                )
+                row = cur.fetchone()
+                if clean_stage in ("applied", "oa", "technical_interview", "offer"):
+                    cur.execute("UPDATE postings SET status = 'applied', updated_at = NOW() WHERE id = %s;", (posting_id,))
+                elif clean_stage in ("rejected", "withdrawn"):
+                    cur.execute("UPDATE postings SET status = 'closed', updated_at = NOW() WHERE id = %s;", (posting_id,))
+            conn.commit()
+        return dict(row) if row else {}
+
     def create_user(self, name: str, email: str) -> Dict[str, Any]:
         """Inserts or activates a verified user in the users table after successful OTP verification."""
         clean_email = email.strip().lower()

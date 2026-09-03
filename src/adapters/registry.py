@@ -9,6 +9,7 @@ from .google import GoogleAdapter
 from .microsoft import MicrosoftAdapter
 from .goldman import GoldmanSachsAdapter
 from .eightfold import EightfoldAdapter
+from .custom import CustomCareersAdapter
 
 ADAPTER_MAP: Dict[str, Type[BaseAdapter]] = {
     "greenhouse": GreenhouseAdapter,
@@ -20,6 +21,8 @@ ADAPTER_MAP: Dict[str, Type[BaseAdapter]] = {
     "goldman": GoldmanSachsAdapter,
     "goldman_sachs": GoldmanSachsAdapter,
     "eightfold": EightfoldAdapter,
+    "custom": CustomCareersAdapter,
+    "bespoke": CustomCareersAdapter,
 }
 
 
@@ -58,8 +61,8 @@ def get_adapter(
             adapter_cls = MicrosoftAdapter
         elif "goldman" in name_lower:
             adapter_cls = GoldmanSachsAdapter
-        elif "eightfold.ai" in url_combined or "american express" in name_lower or "paypal" in name_lower:
-            adapter_cls = EightfoldAdapter
+        elif clean_type in ("custom", "bespoke", ""):
+            adapter_cls = CustomCareersAdapter
         else:
             raise ValueError(
                 f"No adapter registered for ats_type '{ats_type}' (Company: {company_name}). "

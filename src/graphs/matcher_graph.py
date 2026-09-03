@@ -34,8 +34,8 @@ from src.db.models import Posting, Project
 
 logger = logging.getLogger(__name__)
 
-# Default model per AGENTS.md
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
+# Default model
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 MAX_RETRIES = 3
 
 
@@ -376,13 +376,56 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
     """Invokes LLM provider (Gemini or Groq) with OutputFixingParser or falls back to deterministic matching."""
     parser = PydanticOutputParser(pydantic_object=MatchResult)
 
-    # 1. Try Gemini
+    preferred_provider = os.getenv("LLM_PROVIDER", "groq" if os.getenv("GROQ_API_KEY") else "gemini").lower()
+
+    # 1. Try Groq if preferred or configured
+    groq_key = os.getenv("GROQ_API_KEY")
+    if preferred_provider == "groq" and groq_key:
+        try:
+            from langchain_groq import ChatGroq
+
+            model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+            llm = ChatGroq(
+                model=model_name,
+                api_key=groq_key,
+                temperature=0.2,
+                max_tokens=600,
+                timeout=15,
+            )
+            fixer = OutputFixingParser.from_llm(parser=parser, llm=llm) if OutputFixingParser else parser
+
+            format_instructions = parser.get_format_instructions()
+            full_prompt = f"{prompt}\n\n{format_instructions}"
+            response = llm.invoke(full_prompt)
+            parsed: MatchResult = fixer.parse(response.content) if hasattr(fixer, "parse") else parser.parse(response.content)
+
+            return parsed.model_dump()
+        except Exception as exc:
+            logger.warning(f"Groq primary LLM call failed: {exc} — attempting secondary Groq model")
+            try:
+                from langchain_groq import ChatGroq
+                llm = ChatGroq(
+                    model="openai/gpt-oss-20b",
+                    api_key=groq_key,
+                    temperature=0.2,
+                    max_tokens=600,
+                    timeout=15,
+                )
+                format_instructions = parser.get_format_instructions()
+                full_prompt = f"{prompt}\n\n{format_instructions}"
+                response = llm.invoke(full_prompt)
+                parsed: MatchResult = parser.parse(response.content)
+                return parsed.model_dump()
+            except Exception as exc2:
+                logger.warning(f"Groq secondary LLM call failed: {exc2} — attempting Gemini")
+
+    # 2. Try Gemini
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if gemini_key:
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
 
-            model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
             llm = ChatGoogleGenerativeAI(
                 model=model_name,
                 google_api_key=gemini_key,
@@ -398,31 +441,7 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
 
             return parsed.model_dump()
         except Exception as exc:
-            logger.warning(f"Gemini LLM call failed: {exc} — attempting fallback provider")
-
-    # 2. Try Groq fallback
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        try:
-            from langchain_groq import ChatGroq
-
-            llm = ChatGroq(
-                model="llama-3.3-70b-versatile",
-                api_key=groq_key,
-                temperature=0.2,
-                max_tokens=600,
-                timeout=15,
-            )
-            fixer = OutputFixingParser.from_llm(parser=parser, llm=llm) if OutputFixingParser else parser
-
-            format_instructions = parser.get_format_instructions()
-            full_prompt = f"{prompt}\n\n{format_instructions}"
-            response = llm.invoke(full_prompt)
-            parsed: MatchResult = fixer.parse(response.content) if hasattr(fixer, "parse") else parser.parse(response.content)
-
-            return parsed.model_dump()
-        except Exception as exc:
-            logger.warning(f"Groq LLM call failed: {exc} — using deterministic heuristic matching")
+            logger.warning(f"Gemini LLM call failed: {exc} — attempting fallback")
 
     # 3. Deterministic Grounded Matcher (guarantees test and offline reliability)
     # Picks top 2 projects strictly from shortlist, synthesizing grounded technical rationale

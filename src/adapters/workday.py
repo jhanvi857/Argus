@@ -70,7 +70,14 @@ class WorkdayAdapter(BaseAdapter):
             "offset": 0,
             "searchText": self.search_query,
         }
-        return self.http_post_json(self.api_endpoint, json_payload=payload)
+        try:
+            return self.http_post_json(self.api_endpoint, json_payload=payload)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[{self.company_name}] Workday endpoint failed ({self.api_endpoint}): {exc}"
+            )
+            return {"jobPostings": [], "error": str(exc)}
 
     def parse_postings(self, raw_payload: Dict[str, Any]) -> List[ExtractedPosting]:
         """Extracts normalized job postings from Workday JSON response."""

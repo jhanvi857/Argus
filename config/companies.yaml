@@ -121,6 +121,7 @@ global_fintech:
   - name: Stripe
     careers_page_url: https://stripe.com/jobs
     ats_type: greenhouse
+    ats_url: https://boards-api.greenhouse.io/v1/boards/stripe/jobs
     oa_platform: "HackerRank / CodeSignal"
     hiring_process: "OA -> 2 technical interviews"
   - name: PayPal

@@ -191,6 +191,10 @@ class BaseAdapter(ABC):
 
     def fetch_and_parse(self) -> Tuple[Dict[str, Any], List[ExtractedPosting]]:
         """Fetches raw payload and extracts postings in a single step."""
-        raw_payload = self.fetch_raw_payload()
-        postings = self.parse_postings(raw_payload)
-        return raw_payload, postings
+        try:
+            raw_payload = self.fetch_raw_payload()
+            postings = self.parse_postings(raw_payload)
+            return raw_payload, postings
+        except Exception as exc:
+            logger.warning(f"[{self.company_name}] ATS fetch/parse failed: {exc}")
+            return {"error": str(exc), "company": self.company_name}, []

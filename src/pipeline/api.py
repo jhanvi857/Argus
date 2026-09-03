@@ -144,16 +144,38 @@ def list_companies():
 # =============================================================================
 
 @app.post("/postings/{posting_id}/interested")
-def mark_interested(posting_id: int):
+def mark_interested(posting_id: int, force: bool = False):
     """Triggers Phase 6 Matcher LangGraph on UI 'Interested' click.
 
     Grounds recommendations strictly in the candidate's verified project portfolio.
     Returns the match recommendation, rationale, suggested keywords, and status.
+    Caches results in PostgreSQL matches table so LLM is not re-invoked on every view.
     """
     from src.graphs.matcher_graph import process_match
     from src.db.db_manager import DatabaseManager
 
     db = DatabaseManager()
+
+    # If already matched and not forced, return cached match directly (saving LLM quota)
+    if not force:
+        try:
+            existing = db.get_match_by_posting_id(posting_id)
+            if existing:
+                return {
+                    "posting_id": posting_id,
+                    "status": "matched",
+                    "match_result": {
+                        "recommended_project_ids": existing.recommended_project_ids,
+                        "rationale": existing.rationale,
+                        "suggested_keywords": existing.suggested_keywords,
+                    },
+                    "validation_error": None,
+                    "retry_count": 0,
+                    "cached": True,
+                }
+        except Exception as e:
+            logger.debug(f"Cache check bypass: {e}")
+
     final_state = process_match(posting_id=posting_id, db_manager=db)
 
     return {
@@ -162,6 +184,7 @@ def mark_interested(posting_id: int):
         "match_result": final_state.get("match_result"),
         "validation_error": final_state.get("validation_error"),
         "retry_count": final_state.get("retry_count", 0),
+        "cached": False,
     }
 
 
@@ -212,6 +235,7 @@ def list_postings(relevant_only: bool = True, status: Optional[str] = None):
                 p.status,
                 p.relevant,
                 p.notified_at,
+                p.raw_json,
                 c.name AS company_name,
                 c.ats_type
             FROM postings p
@@ -224,22 +248,32 @@ def list_postings(relevant_only: bool = True, status: Optional[str] = None):
         if status:
             query += " AND p.status = %s"
             params.append(status)
-        query += " ORDER BY p.first_seen_at DESC LIMIT 100;"
+        query += " ORDER BY p.first_seen_at DESC LIMIT 300;"
 
         with db.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-                # Format dates to string
+                # Format dates to string and extract location
                 results = []
                 for r in rows:
                     item = dict(r)
                     for date_field in ("first_seen_at", "last_seen_at", "deadline", "notified_at"):
                         if item.get(date_field):
                             item[date_field] = str(item[date_field])
+                    raw = item.get("raw_json") or {}
+                    raw_loc = raw.get("location")
+                    if isinstance(raw_loc, dict):
+                        item["location"] = raw_loc.get("name") or "Multiple Locations"
+                    elif isinstance(raw_loc, str) and raw_loc.strip():
+                        item["location"] = raw_loc.strip()
+                    else:
+                        item["location"] = "Multiple Locations"
+                    item["required_skills"] = raw.get("required_skills") or []
                     results.append(item)
                 return results
     except Exception as exc:
+        logger.warning(f"Failed to fetch postings from DB: {exc}")
         return []
 
 
