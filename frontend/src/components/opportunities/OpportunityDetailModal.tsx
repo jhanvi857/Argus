@@ -11,24 +11,25 @@ import {
   MessageSquare,
   FileText
 } from 'lucide-react';
-import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus } from '../../types';
+import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus, ExperienceLogVisibility, AuthorDisplayMode } from '../../types';
 import { ArgusDataService } from '../../services/api';
+import { ExperiencesPanel } from '../experiences/ExperiencesPanel';
 
 const formatLocation = (loc: any): string => {
   if (!loc) return 'Multiple Locations';
   const str = typeof loc === 'string' ? loc : loc.name || '';
   if (!str.trim()) return 'Multiple Locations';
-  
+
   // Format long location lists (e.g. "Berkeley, California, United States; San Francisco, California, United States")
   const parts = str.split(';').map((p: string) => p.trim()).filter(Boolean);
-  const cleanParts = parts.map((p: string) => 
+  const cleanParts = parts.map((p: string) =>
     p.replace(/,\s*United States/gi, '')
-     .replace(/,\s*California/gi, ', CA')
-     .replace(/,\s*New York/gi, ', NY')
-     .replace(/,\s*Washington/gi, ', WA')
-     .replace(/,\s*Texas/gi, ', TX')
-     .replace(/,\s*Massachusetts/gi, ', MA')
-     .replace(/,\s*Illinois/gi, ', IL')
+      .replace(/,\s*California/gi, ', CA')
+      .replace(/,\s*New York/gi, ', NY')
+      .replace(/,\s*Washington/gi, ', WA')
+      .replace(/,\s*Texas/gi, ', TX')
+      .replace(/,\s*Massachusetts/gi, ', MA')
+      .replace(/,\s*Illinois/gi, ', IL')
   );
 
   if (cleanParts.length > 2) {
@@ -116,7 +117,8 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isMatching, setIsMatching] = useState<boolean>(false);
   const [matchStep, setMatchStep] = useState<string>('idle');
-  
+  const [activeModalTab, setActiveModalTab] = useState<'details' | 'experiences'>('details');
+
   // Application State
   const [currentApp, setCurrentApp] = useState<Application | null>(null);
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -130,6 +132,9 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [appExperienceReflection, setAppExperienceReflection] = useState<string>('');
   const [appOfferDetails, setAppOfferDetails] = useState<string>('');
   const [appNotes, setAppNotes] = useState<string>('');
+  const [appVisibility, setAppVisibility] = useState<ExperienceLogVisibility>('private');
+  const [appAuthorDisplayMode, setAppAuthorDisplayMode] = useState<AuthorDisplayMode>('named');
+  const [appConfidentialityAck, setAppConfidentialityAck] = useState<boolean>(false);
   const [isSavedToast, setIsSavedToast] = useState<boolean>(false);
 
   useEffect(() => {
@@ -147,6 +152,9 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       setAppExperienceReflection(existing.experience_reflection || '');
       setAppOfferDetails(existing.offer_details || '');
       setAppNotes(existing.notes || '');
+      setAppVisibility(existing.visibility || 'private');
+      setAppAuthorDisplayMode(existing.author_display_mode || 'named');
+      setAppConfidentialityAck(existing.confidentiality_ack || false);
     } else {
       setCurrentApp(null);
       setAppStage('applied');
@@ -159,6 +167,9 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       setAppExperienceReflection('');
       setAppOfferDetails('');
       setAppNotes('');
+      setAppVisibility('private');
+      setAppAuthorDisplayMode('named');
+      setAppConfidentialityAck(false);
     }
   }, [posting?.id]);
 
@@ -203,6 +214,9 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       experience_reflection: appExperienceReflection,
       offer_details: appOfferDetails,
       notes: appNotes,
+      visibility: appVisibility,
+      author_display_mode: appAuthorDisplayMode,
+      confidentiality_ack: appConfidentialityAck,
       applied_date: currentApp?.applied_date || new Date().toISOString().split('T')[0]
     });
 
@@ -213,9 +227,14 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
     setTimeout(() => setIsSavedToast(false), 2500);
   };
 
-  const handleSaveExperienceLog = (e: React.FormEvent) => {
+  const handleSaveExperienceLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!posting) return;
+
+    if (appVisibility === 'shared' && !appConfidentialityAck) {
+      alert('Sharing with community requires confirming that this does not violate any confidentiality agreement (NDA).');
+      return;
+    }
 
     const saved = ArgusDataService.saveApplication({
       posting_id: posting.id,
@@ -230,8 +249,32 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       experience_reflection: appExperienceReflection,
       offer_details: appOfferDetails,
       notes: appNotes,
+      visibility: appVisibility,
+      author_display_mode: appAuthorDisplayMode,
+      confidentiality_ack: appConfidentialityAck,
       applied_date: currentApp?.applied_date || new Date().toISOString().split('T')[0]
     });
+
+    // Also push to experience_logs
+    try {
+      await ArgusDataService.saveExperienceLog({
+        company_id: posting.company_id,
+        posting_id: posting.id,
+        stage: appStage,
+        technical_questions: appInterviewQuestions,
+        takeaways: appExperienceReflection,
+        offer_details: appOfferDetails,
+        oa_date: appOaDate || null,
+        interview_date: appInterviewDate || null,
+        interview_round: appInterviewRound,
+        visibility: appVisibility,
+        author_display_mode: appAuthorDisplayMode,
+        verified_applicant: true,
+        confidentiality_ack: appConfidentialityAck
+      });
+    } catch (err) {
+      console.warn('Experience log save error:', err);
+    }
 
     setCurrentApp(saved);
     onStatusChange(posting.id, appStage === 'interested' ? 'reviewed' : 'applied');
@@ -404,274 +447,328 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                     })}
                   </div>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={() => {
+                      setActiveModalTab('experiences');
+                      setIsLogModalOpen(true);
+                    }}
+                    className="btn-ghost btn-sm"
+                    style={{
+                      fontSize: '12px',
+                      color: 'var(--primary)',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 8px'
+                    }}
+                  >
+                    <MessageSquare size={13} />
+                    <span>{currentApp?.interview_questions ? 'Edit Interview Log' : '+ Log Interview Experience'}</span>
+                  </button>
+                </div>
+              </div>
 
+              {/* Row 4: View Tab Switcher (Details vs Experiences) */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                borderBottom: '1px solid var(--gray-200)',
+                paddingBottom: '2px',
+                marginTop: '4px'
+              }}>
                 <button
-                  onClick={() => setIsLogModalOpen(true)}
-                  className="btn-ghost btn-sm"
+                  type="button"
+                  onClick={() => setActiveModalTab('details')}
                   style={{
-                    fontSize: '12px',
-                    color: 'var(--primary)',
-                    fontWeight: 700,
+                    padding: '8px 16px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeModalTab === 'details' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    color: activeModalTab === 'details' ? 'var(--primary)' : 'var(--gray-500)',
+                    fontWeight: activeModalTab === 'details' ? 700 : 500,
+                    fontSize: '13px',
+                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px',
-                    padding: '3px 8px'
+                    gap: '6px'
+                  }}
+                >
+                  <Sparkles size={13} />
+                  <span>Role Overview & AI Portfolio Match</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveModalTab('experiences')}
+                  style={{
+                    padding: '8px 16px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeModalTab === 'experiences' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    color: activeModalTab === 'experiences' ? 'var(--primary)' : 'var(--gray-500)',
+                    fontWeight: activeModalTab === 'experiences' ? 700 : 500,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
                 >
                   <MessageSquare size={13} />
-                  <span>{currentApp?.interview_questions ? 'Edit Interview Log' : '+ Log Interview Experience'}</span>
+                  <span>Company Experiences & Prep</span>
                 </button>
               </div>
             </div>
 
-            {/* ── TWO-COLUMN GRID (Job Info Left, AI Match Right) ── */}
-            <div className="opportunity-detail-grid">
-              {/* ── LEFT: Clean Job Details ── */}
-              <div>
-                {/* Skill Tags */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-                  {requiredSkills.map((skill, i) => (
-                    <span key={i} className="badge-tag-navy" style={{
-                      fontSize: '11.5px',
-                      padding: '3px 10px',
-                      borderRadius: 'var(--border-radius-full)'
-                    }}>
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Logged Interview & Experience Callout if exists */}
-                {currentApp && (currentApp.interview_questions || currentApp.experience_reflection || currentApp.offer_details) && (
-                  <div style={{
-                    marginBottom: '20px',
-                    padding: '12px 14px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 'var(--border-radius-md)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <FileText size={13} color="var(--primary)" />
-                        Your Interview Notes & Logged Questions
+            {/* Content Tabs */}
+            {activeModalTab === 'experiences' ? (
+              <ExperiencesPanel
+                company={{ id: posting.company_id, name: posting.company_name }}
+                currentUser={currentUser}
+                onOpenLogModal={() => setIsLogModalOpen(true)}
+              />
+            ) : (
+              /* ── TWO-COLUMN GRID (Job Info Left, AI Match Right) ── */
+              <div className="opportunity-detail-grid">
+                {/* ── LEFT: Clean Job Details ── */}
+                <div>
+                  {/* Skill Tags */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
+                    {requiredSkills.map((skill, i) => (
+                      <span key={i} className="badge-tag-navy" style={{
+                        fontSize: '11.5px',
+                        padding: '3px 10px',
+                        borderRadius: 'var(--border-radius-full)'
+                      }}>
+                        {skill}
                       </span>
-                      <button
-                        onClick={() => setIsLogModalOpen(true)}
-                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    {currentApp.interview_questions && (
-                      <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
-                        <strong>Questions:</strong> {currentApp.interview_questions}
-                      </p>
-                    )}
-                    {currentApp.experience_reflection && (
-                      <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
-                        <strong>Takeaways:</strong> {currentApp.experience_reflection}
-                      </p>
-                    )}
-                    {currentApp.offer_details && (
-                      <p style={{ margin: 0, fontSize: '12px', color: '#15803d', fontWeight: 600 }}>
-                        🎉 <strong>Offer:</strong> {currentApp.offer_details}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Job Description */}
-                <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
-                    Job Description
-                  </h3>
-                  <p style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.7, margin: 0 }}>
-                    {jdText}
-                  </p>
-                </div>
-
-                {/* Key Responsibilities */}
-                <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
-                    Key Responsibilities
-                  </h3>
-                  <ul style={{ paddingLeft: '18px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {responsibilities.map((r, i) => (
-                      <li key={i} style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.5 }}>
-                        {r}
-                      </li>
                     ))}
-                  </ul>
-                </div>
-              </div>
+                  </div>
 
-              {/* ── RIGHT: AI Match Recommendation ── */}
-              <div>
-                <div className="card-surface" style={{ padding: '20px', position: 'sticky', top: '0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', margin: 0 }}>
-                        AI Match Recommendation
-                      </h3>
-                      {(matchResult?.status === 'needs_review' || posting.status === 'needs_review') && (
-                        <span style={{
-                          fontSize: '10.5px', fontWeight: 700, color: '#b45309',
-                          background: '#fef3c7', border: '1px solid #fde68a',
-                          padding: '1px 6px', borderRadius: 'var(--border-radius-full)',
-                          textTransform: 'uppercase'
-                        }}>
-                          Needs Review
+                  {/* Logged Interview & Experience Callout if exists */}
+                  {currentApp && (currentApp.interview_questions || currentApp.experience_reflection || currentApp.offer_details) && (
+                    <div style={{
+                      marginBottom: '20px',
+                      padding: '12px 14px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 'var(--border-radius-md)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px'
+                    }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <FileText size={13} color="var(--primary)" />
+                          Your Interview Notes & Logged Questions
                         </span>
+                        <button
+                          onClick={() => setIsLogModalOpen(true)}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                      {currentApp.interview_questions && (
+                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                          <strong>Questions:</strong> {currentApp.interview_questions}
+                        </p>
+                      )}
+                      {currentApp.experience_reflection && (
+                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                          <strong>Takeaways:</strong> {currentApp.experience_reflection}
+                        </p>
+                      )}
+                      {currentApp.offer_details && (
+                        <p style={{ margin: 0, fontSize: '12px', color: '#15803d', fontWeight: 600 }}>
+                          🎉 <strong>Offer:</strong> {currentApp.offer_details}
+                        </p>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  )}
+
+                  {/* Job Description */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
+                      Job Description
+                    </h3>
+                    <p style={{ fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.7, margin: 0 }}>
+                      {jdText}
+                    </p>
+                  </div>
+
+                  {/* Key Responsibilities */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gray-900)', marginBottom: '8px' }}>
+                      Key Responsibilities
+                    </h3>
+                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13.5px', color: 'var(--gray-600)', lineHeight: 1.7 }}>
+                      {responsibilities.map((resp, i) => (
+                        <li key={i}>{resp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* ── RIGHT: Ground Truth AI Match & Project Recommendations ── */}
+                <div>
+                  <div className="card-surface" style={{ padding: '20px', borderRadius: 'var(--border-radius-md)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Sparkles size={16} color="var(--primary)" />
+                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--gray-900)', margin: 0 }}>
+                          AI Portfolio Match
+                        </h3>
+                      </div>
                       <button
                         className="btn-ghost btn-sm"
                         onClick={() => runMatchComputation(true)}
                         disabled={isMatching}
-                        title="Re-run matching with LLM"
-                        style={{ padding: '4px' }}
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
                       >
-                        <RotateCw size={13} className={isMatching ? 'animate-spin' : ''} />
+                        <RotateCw size={12} className={isMatching ? 'spin-animation' : ''} />
+                        <span>{isMatching ? 'Matching...' : 'Re-run Match'}</span>
                       </button>
-                      <span className="badge-beta">BETA</span>
                     </div>
-                  </div>
 
-                  {isMatching ? (
-                    <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-                      <Loader2 size={24} className="animate-spin" color="var(--primary)" style={{ margin: '0 auto 10px' }} />
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gray-900)', marginBottom: '4px' }}>
-                        Analyzing Job with Groq LLM
+                    {isMatching ? (
+                      <div style={{ textAlign: 'center', padding: '36px 12px' }}>
+                        <Loader2 size={24} className="spin-animation" color="var(--primary)" style={{ margin: '0 auto 12px' }} />
+                        <p style={{ fontSize: '12px', color: 'var(--gray-600)', margin: 0 }}>
+                          {matchStep}
+                        </p>
                       </div>
-                      <div style={{ fontSize: '11.5px', color: 'var(--gray-500)' }}>
-                        {matchStep}
-                      </div>
-                    </div>
-                  ) : matchResult ? (
-                    <div>
-                      {/* Overall Fit Score */}
-                      <div style={{
-                        padding: '12px 14px',
-                        background: 'var(--primary-subtle)',
-                        borderRadius: 'var(--border-radius-md)',
-                        marginBottom: '14px',
-                        border: '1px solid rgba(173, 40, 49, 0.15)'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-700)' }}>
-                            Grounded Match Alignment
+                    ) : matchResult ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {/* Overall Fit Score */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px 14px',
+                          background: 'var(--gray-50)',
+                          borderRadius: 'var(--border-radius-sm)',
+                          border: '1px solid var(--gray-200)'
+                        }}>
+                          <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--gray-700)' }}>
+                            Portfolio Fit Score
                           </span>
-                          <span style={{ fontSize: '17px', fontWeight: 800, color: 'var(--primary)' }}>
-                            {matchResult.overall_fit_score || 85}%
+                          <span style={{
+                            fontSize: '18px',
+                            fontWeight: 800,
+                            color: matchResult.overall_fit_score >= 80 ? '#15803d' : matchResult.overall_fit_score >= 60 ? '#b45309' : '#dc2626'
+                          }}>
+                            {matchResult.overall_fit_score}%
                           </span>
                         </div>
-                        <div className="progress-bar-container" style={{ height: '5px', marginBottom: '8px' }}>
-                          <div
-                            className="progress-bar-fill"
-                            style={{ width: `${matchResult.overall_fit_score || 85}%` }}
-                          />
-                        </div>
-                        {matchResult.rationale && (
-                          <FormattedRationale text={matchResult.rationale} />
-                        )}
-                      </div>
 
-                      {/* Recommended Projects with Quantified Resume Bullets */}
-                      {matchResult.recommendations && matchResult.recommendations.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
-                            Recommended Projects & Resume Bullets
+                        {/* Rationale */}
+                        {matchResult.overall_fit_summary && (
+                          <div>
+                            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                              Strategic Rationale:
+                            </div>
+                            <FormattedRationale text={matchResult.overall_fit_summary} />
                           </div>
+                        )}
 
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {matchResult.recommendations.slice(0, 3).map((rec, index) => (
-                              <div key={rec.projectId} style={{
-                                padding: '10px 12px',
-                                border: '1px solid var(--gray-200)',
-                                borderRadius: 'var(--border-radius-md)',
-                                background: 'var(--bg-white)'
-                              }}>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '4px' }}>
-                                  <span style={{
-                                    fontFamily: 'var(--font-mono)',
-                                    fontSize: '12px',
-                                    fontWeight: 800,
-                                    color: 'var(--primary)',
-                                    minWidth: '16px'
-                                  }}>
-                                    {index + 1}
-                                  </span>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--gray-900)' }}>
-                                      {rec.project.name}
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', margin: '3px 0' }}>
-                                      {rec.project.tech_stack.slice(0, 3).map((t, i) => (
-                                        <span key={i} className="badge-tag" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
-                                          {t}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <p style={{ fontSize: '11px', color: 'var(--gray-600)', lineHeight: 1.35, margin: '2px 0 4px' }}>
-                                      {rec.rationale}
-                                    </p>
-
-                                    {/* Quantified Resume Bullets */}
-                                    {rec.recommendedBullets && rec.recommendedBullets.length > 0 && (
-                                      <div style={{
-                                        marginTop: '4px',
-                                        padding: '6px 8px',
-                                        background: 'var(--gray-50)',
-                                        borderRadius: 'var(--border-radius-sm)',
-                                        border: '1px solid var(--gray-200)'
-                                      }}>
-                                        <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: '2px' }}>
-                                          Featured Resume Bullet:
-                                        </div>
-                                        <ul style={{ margin: 0, paddingLeft: '12px', fontSize: '10.5px', color: 'var(--gray-700)', lineHeight: 1.35 }}>
-                                          {rec.recommendedBullets.slice(0, 2).map((b, bi) => (
-                                            <li key={bi}>{b}</li>
-                                          ))}
-                                        </ul>
+                        {/* Recommended Projects */}
+                        {matchResult.recommendations && matchResult.recommendations.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                              Recommended Projects to Lead With:
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              {matchResult.recommendations.map((rec, index) => (
+                                <div
+                                  key={rec.projectId}
+                                  style={{
+                                    padding: '12px 14px',
+                                    borderRadius: 'var(--border-radius-sm)',
+                                    border: '1px solid var(--gray-200)',
+                                    background: '#ffffff'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                    <span style={{
+                                      fontFamily: 'var(--font-mono)',
+                                      fontSize: '12px',
+                                      fontWeight: 800,
+                                      color: 'var(--primary)',
+                                      minWidth: '16px'
+                                    }}>
+                                      {index + 1}
+                                    </span>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                                        {rec.project.name}
                                       </div>
-                                    )}
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', margin: '3px 0' }}>
+                                        {rec.project.tech_stack.slice(0, 3).map((t, i) => (
+                                          <span key={i} className="badge-tag" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
+                                            {t}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      <p style={{ fontSize: '11px', color: 'var(--gray-600)', lineHeight: 1.35, margin: '2px 0 4px' }}>
+                                        {rec.rationale}
+                                      </p>
+
+                                      {/* Quantified Resume Bullets */}
+                                      {rec.recommendedBullets && rec.recommendedBullets.length > 0 && (
+                                        <div style={{
+                                          marginTop: '4px',
+                                          padding: '6px 8px',
+                                          background: 'var(--gray-50)',
+                                          borderRadius: 'var(--border-radius-sm)',
+                                          border: '1px solid var(--gray-200)'
+                                        }}>
+                                          <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: '2px' }}>
+                                            Featured Resume Bullet:
+                                          </div>
+                                          <ul style={{ margin: 0, paddingLeft: '12px', fontSize: '10.5px', color: 'var(--gray-700)', lineHeight: 1.35 }}>
+                                            {rec.recommendedBullets.slice(0, 2).map((b, bi) => (
+                                              <li key={bi}>{b}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      <button
-                        className="btn-primary"
-                        onClick={onOpenPortfolio}
-                        style={{
-                          width: '100%',
-                          marginTop: '14px',
-                          borderRadius: 'var(--border-radius-full)',
-                          padding: '9px',
-                          fontSize: '13px'
-                        }}
-                      >
-                        View Full Match in Portfolio
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '24px' }}>
-                      <Sparkles size={20} color="var(--gray-400)" style={{ margin: '0 auto 6px' }} />
-                      <p style={{ fontSize: '12.5px', color: 'var(--gray-500)' }}>
-                        Click "Run AI Match" to evaluate your portfolio fit.
-                      </p>
-                    </div>
-                  )}
+                        <button
+                          className="btn-primary"
+                          onClick={onOpenPortfolio}
+                          style={{
+                            width: '100%',
+                            marginTop: '14px',
+                            borderRadius: 'var(--border-radius-full)',
+                            padding: '9px',
+                            fontSize: '13px'
+                          }}
+                        >
+                          View Full Match in Portfolio
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '24px' }}>
+                        <Sparkles size={20} color="var(--gray-400)" style={{ margin: '0 auto 6px' }} />
+                        <p style={{ fontSize: '12.5px', color: 'var(--gray-500)' }}>
+                          Click "Run AI Match" to evaluate your portfolio fit.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -679,7 +776,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       {/* ── DEDICATED CLEAN EXPERIENCE LOG MODAL ── */}
       {isLogModalOpen && (
         <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={() => setIsLogModalOpen(false)}>
-          <div className="modal-container" style={{ maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-container" style={{ maxWidth: '580px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h2 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--gray-900)' }}>
@@ -695,8 +792,8 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
             </div>
 
             <form onSubmit={handleSaveExperienceLog}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px 24px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '18px 24px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
                   <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
                     Application Stage
                   </label>
@@ -804,13 +901,107 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* ── CONSENT & COMMUNITY SHARING FLOW ── */}
+                <div style={{
+                  padding: '12px 14px',
+                  background: appVisibility === 'shared' ? 'rgba(173,40,49,0.03)' : 'var(--gray-50)',
+                  borderRadius: 'var(--border-radius-md)',
+                  border: appVisibility === 'shared' ? '1.5px solid rgba(173,40,49,0.25)' : '1px solid var(--gray-200)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={appVisibility === 'shared'}
+                      onChange={e => {
+                        const isShared = e.target.checked;
+                        setAppVisibility(isShared ? 'shared' : 'private');
+                        if (!isShared) {
+                          setAppConfidentialityAck(false);
+                        }
+                      }}
+                      style={{ accentColor: 'var(--primary)', width: '15px', height: '15px' }}
+                    />
+                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                      Share with Argus community (helps other candidates prepare)
+                    </span>
+                  </label>
+
+                  {appVisibility === 'shared' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingLeft: '22px' }}>
+                      <div>
+                        <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gray-700)', display: 'block', marginBottom: '4px' }}>
+                          Post as:
+                        </span>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: 'var(--gray-800)' }}>
+                            <input
+                              type="radio"
+                              name="authorDisplayMode"
+                              checked={appAuthorDisplayMode === 'named'}
+                              onChange={() => setAppAuthorDisplayMode('named')}
+                              style={{ accentColor: 'var(--primary)' }}
+                            />
+                            <span>{currentUser.full_name || 'My Name'} (Named)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: 'var(--gray-800)' }}>
+                            <input
+                              type="radio"
+                              name="authorDisplayMode"
+                              checked={appAuthorDisplayMode === 'anonymous'}
+                              onChange={() => setAppAuthorDisplayMode('anonymous')}
+                              style={{ accentColor: 'var(--primary)' }}
+                            />
+                            <span>Anonymous</span>
+                          </label>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--gray-400)', marginTop: '2px' }}>
+                          Your raw email address is never exposed publicly.
+                        </div>
+                      </div>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        background: '#ffffff',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--border-radius-sm)',
+                        border: !appConfidentialityAck ? '1px solid #fca5a5' : '1px solid #86efac'
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={appConfidentialityAck}
+                          onChange={e => setAppConfidentialityAck(e.target.checked)}
+                          style={{ accentColor: 'var(--primary)', marginTop: '2px', width: '14px', height: '14px' }}
+                          required={appVisibility === 'shared'}
+                        />
+                        <span style={{ fontSize: '11.5px', color: 'var(--gray-700)', lineHeight: 1.4 }}>
+                          I confirm sharing this doesn't violate any confidentiality agreement or NDA I signed with {posting.company_name}.
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="modal-footer">
                 <button type="button" className="btn-secondary" onClick={() => setIsLogModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={appVisibility === 'shared' && !appConfidentialityAck}
+                  style={{
+                    opacity: (appVisibility === 'shared' && !appConfidentialityAck) ? 0.6 : 1,
+                    cursor: (appVisibility === 'shared' && !appConfidentialityAck) ? 'not-allowed' : 'pointer'
+                  }}
+                >
                   <span>Save Experience Log</span>
                   <Check size={14} />
                 </button>

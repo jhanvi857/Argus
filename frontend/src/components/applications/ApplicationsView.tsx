@@ -12,8 +12,9 @@ import {
   Search,
   ChevronRight
 } from 'lucide-react';
-import { Application, ApplicationStage, Posting, ReferralStatus, UserProfile } from '../../types';
+import { Application, ApplicationStage, Posting, ReferralStatus, UserProfile, ExperienceLogVisibility, AuthorDisplayMode } from '../../types';
 import { ArgusDataService } from '../../services/api';
+import { ExperiencesPanel } from '../experiences/ExperiencesPanel';
 
 interface ApplicationsViewProps {
   applications: Application[];
@@ -56,6 +57,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [viewExperiencesCompany, setViewExperiencesCompany] = useState<{ id: number; name: string } | null>(null);
 
   // Form State for editing application & interview experience
   const [stage, setStage] = useState<ApplicationStage>('applied');
@@ -68,6 +70,9 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
   const [experienceReflection, setExperienceReflection] = useState<string>('');
   const [offerDetails, setOfferDetails] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [visibility, setVisibility] = useState<ExperienceLogVisibility>('private');
+  const [authorDisplayMode, setAuthorDisplayMode] = useState<AuthorDisplayMode>('named');
+  const [confidentialityAck, setConfidentialityAck] = useState<boolean>(false);
 
   const stages: { id: ApplicationStage; label: string }[] = [
     { id: 'interested', label: 'Interested' },
@@ -117,12 +122,20 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
     setExperienceReflection(app.experience_reflection || '');
     setOfferDetails(app.offer_details || '');
     setNotes(app.notes || '');
+    setVisibility(app.visibility || 'private');
+    setAuthorDisplayMode(app.author_display_mode || 'named');
+    setConfidentialityAck(app.confidentiality_ack || false);
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedApp) return;
+
+    if (visibility === 'shared' && !confidentialityAck) {
+      alert('Sharing with community requires confirming that this does not violate any confidentiality agreement (NDA).');
+      return;
+    }
 
     ArgusDataService.saveApplication({
       ...selectedApp,
@@ -135,8 +148,34 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
       interview_questions: interviewQuestions,
       experience_reflection: experienceReflection,
       offer_details: offerDetails,
-      notes
+      notes,
+      visibility,
+      author_display_mode: authorDisplayMode,
+      confidentiality_ack: confidentialityAck
     });
+
+    if (selectedApp.posting?.company_id) {
+      try {
+        await ArgusDataService.saveExperienceLog({
+          company_id: selectedApp.posting.company_id,
+          posting_id: selectedApp.posting_id,
+          application_id: selectedApp.id,
+          stage,
+          technical_questions: interviewQuestions,
+          takeaways: experienceReflection,
+          offer_details: offerDetails,
+          oa_date: oaDate || null,
+          interview_date: interviewDate || null,
+          interview_round: interviewRound,
+          visibility,
+          author_display_mode: authorDisplayMode,
+          verified_applicant: true,
+          confidentiality_ack: confidentialityAck
+        });
+      } catch (err) {
+        console.warn('Experience log save warning:', err);
+      }
+    }
 
     setModalOpen(false);
     onRefresh();
@@ -429,6 +468,17 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                     {app.posting && (
                       <button
                         className="btn-secondary btn-sm"
+                        onClick={() => setViewExperiencesCompany({ id: app.posting!.company_id, name: companyName })}
+                        style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <MessageSquare size={12} color="#2563eb" />
+                        <span>View Experiences</span>
+                      </button>
+                    )}
+
+                    {app.posting && (
+                      <button
+                        className="btn-secondary btn-sm"
                         onClick={() => onSelectPosting(app.posting!)}
                         style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                       >
@@ -610,6 +660,92 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* ── CONSENT & COMMUNITY SHARING FLOW ── */}
+                <div style={{
+                  padding: '12px 14px',
+                  background: visibility === 'shared' ? 'rgba(173,40,49,0.03)' : 'var(--gray-50)',
+                  borderRadius: 'var(--border-radius-md)',
+                  border: visibility === 'shared' ? '1.5px solid rgba(173,40,49,0.25)' : '1px solid var(--gray-200)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={visibility === 'shared'}
+                      onChange={e => {
+                        const isShared = e.target.checked;
+                        setVisibility(isShared ? 'shared' : 'private');
+                        if (!isShared) {
+                          setConfidentialityAck(false);
+                        }
+                      }}
+                      style={{ accentColor: 'var(--primary)', width: '15px', height: '15px' }}
+                    />
+                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--gray-900)' }}>
+                      Share with Argus community (helps other candidates prepare)
+                    </span>
+                  </label>
+
+                  {visibility === 'shared' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingLeft: '22px' }}>
+                      <div>
+                        <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gray-700)', display: 'block', marginBottom: '4px' }}>
+                          Post as:
+                        </span>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: 'var(--gray-800)' }}>
+                            <input
+                              type="radio"
+                              name="authorDisplayModeApp"
+                              checked={authorDisplayMode === 'named'}
+                              onChange={() => setAuthorDisplayMode('named')}
+                              style={{ accentColor: 'var(--primary)' }}
+                            />
+                            <span>{currentUser.full_name || 'My Name'} (Named)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: 'var(--gray-800)' }}>
+                            <input
+                              type="radio"
+                              name="authorDisplayModeApp"
+                              checked={authorDisplayMode === 'anonymous'}
+                              onChange={() => setAuthorDisplayMode('anonymous')}
+                              style={{ accentColor: 'var(--primary)' }}
+                            />
+                            <span>Anonymous</span>
+                          </label>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--gray-400)', marginTop: '2px' }}>
+                          Your raw email address is never exposed publicly.
+                        </div>
+                      </div>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        background: '#ffffff',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--border-radius-sm)',
+                        border: !confidentialityAck ? '1px solid #fca5a5' : '1px solid #86efac'
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={confidentialityAck}
+                          onChange={e => setConfidentialityAck(e.target.checked)}
+                          style={{ accentColor: 'var(--primary)', marginTop: '2px', width: '14px', height: '14px' }}
+                          required={visibility === 'shared'}
+                        />
+                        <span style={{ fontSize: '11.5px', color: 'var(--gray-700)', lineHeight: 1.4 }}>
+                          I confirm sharing this doesn't violate any confidentiality agreement or NDA I signed with {selectedApp.posting?.company_name}.
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="modal-footer">
@@ -625,12 +761,47 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                 <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={visibility === 'shared' && !confidentialityAck}
+                  style={{
+                    opacity: (visibility === 'shared' && !confidentialityAck) ? 0.6 : 1,
+                    cursor: (visibility === 'shared' && !confidentialityAck) ? 'not-allowed' : 'pointer'
+                  }}
+                >
                   <span>Save Application & Experience</span>
                   <Check size={14} />
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Company Experiences Modal */}
+      {viewExperiencesCompany && (
+        <div className="modal-overlay" onClick={() => setViewExperiencesCompany(null)}>
+          <div className="modal-container" style={{ maxWidth: '780px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--gray-900)' }}>
+                  Experiences & Prep: {viewExperiencesCompany.name}
+                </h2>
+                <div style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
+                  Peer interview logs and external prep intelligence
+                </div>
+              </div>
+              <button className="btn-ghost btn-sm" onClick={() => setViewExperiencesCompany(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto', padding: '16px 20px 24px' }}>
+              <ExperiencesPanel
+                company={viewExperiencesCompany}
+                currentUser={currentUser}
+              />
+            </div>
           </div>
         </div>
       )}
