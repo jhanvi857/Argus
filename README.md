@@ -383,30 +383,6 @@ Add this configuration to your Claude Desktop config file:
 
 ---
 
-## 8. Setup and Deployment
-
-### 8.1 Prerequisites
-
-- Python 3.11 or higher
-- Node.js 20 or higher
-- Docker and Docker Compose
-- PostgreSQL 16 (if running standalone without Docker)
-
-### 8.2 Environment Configuration
-
-Create a `.env` file in the root directory based on `.env.example`:
-
-```bash
-# Database Configuration
-POSTGRES_DB=argus
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/argus
-
----
-
 ## 8. Community & Curated Prep Intelligence
 
 Argus unifies internal candidate interview logs with curated external debriefs in a unified **Experiences Panel** without aggregator noise or credit limits:
