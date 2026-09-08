@@ -14,6 +14,8 @@ class IngestionState(TypedDict):
     company_name: str
     raw_posting: dict  # Raw JSON from ATS adapter (ExtractedPosting.raw_json)
     role_filter: list  # Company-specific role filter strings from config
+    role_level: Optional[str]  # 'all' | 'intern' | 'new_grad' from user preferences
+    target_locations: Optional[list]  # Target countries/regions from user preferences
 
     # --- Extracted posting metadata (set by extract_fields) ---
     external_id: Optional[str]

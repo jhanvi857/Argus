@@ -95,8 +95,27 @@ class IngestionPipeline:
             cfg = catalog.get_company_by_name(company_record.name)
             role_filter = cfg.role_filter if cfg else []
 
+            # Retrieve active user preferences for role_level and locations
+            user_pref = {}
+            if hasattr(self.db, "get_active_preferences"):
+                try:
+                    res = self.db.get_active_preferences()
+                    if isinstance(res, dict):
+                        user_pref = res
+                except Exception:
+                    pass
+            role_level = str(user_pref.get("role_level") or "all")
+            target_locations = user_pref.get("locations") if isinstance(user_pref.get("locations"), list) else None
+
             for p in diff_res.new_postings:
-                graph_result = process_new_posting(p, company_record, role_filter, db_manager=self.db)
+                graph_result = process_new_posting(
+                    p,
+                    company_record,
+                    role_filter,
+                    db_manager=self.db,
+                    role_level=role_level,
+                    target_locations=target_locations,
+                )
 
                 is_relevant = graph_result.get("is_relevant", False)
                 is_duplicate = graph_result.get("is_duplicate", False)

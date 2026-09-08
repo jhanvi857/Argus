@@ -76,6 +76,8 @@ def classify_with_llm(
     deadline: Optional[str] = None,
     raw_context: Optional[str] = None,
     role_filter: Optional[List[str]] = None,
+    role_level: str = "all",
+    target_locations: Optional[List[str]] = None,
 ) -> LLMClassificationResult:
     """Classifies a posting's relevance using Groq LLM.
 
@@ -90,6 +92,8 @@ def classify_with_llm(
         deadline: Application deadline.
         raw_context: Additional context extracted from raw JSON (first 500 chars).
         role_filter: Company-specific filter keywords.
+        role_level: Target role level ('all', 'intern', 'new_grad').
+        target_locations: Target country/region list.
 
     Returns:
         LLMClassificationResult with relevance judgment and rationale.
@@ -117,8 +121,19 @@ def classify_with_llm(
         # Use structured output for reliable parsing
         structured_llm = llm.with_structured_output(LLMClassificationResult)
 
+        role_pref_text = ROLE_PREFERENCES
+        if role_level == "intern":
+            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants INTERNSHIPS / SUMMER ANALYST / CO-OP roles ONLY. Reject all full-time new grad or entry-level positions."
+        elif role_level == "new_grad":
+            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants NEW GRAD / ENTRY LEVEL full-time roles ONLY. Reject all student internships or co-ops."
+        elif role_level == "experienced":
+            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate is an EXPERIENCED / INDUSTRY ENGINEER (SDE I-II). Reject all student internships, co-ops, and summer analyst roles. Accept full-time Software Engineer / SDE roles."
+
+        if target_locations:
+            role_pref_text += f"\nLOCATION CONSTRAINT: Candidate targets only these locations/countries: {', '.join(target_locations)}. Reject postings outside these regions."
+
         prompt = CLASSIFICATION_PROMPT.format(
-            role_preferences=ROLE_PREFERENCES,
+            role_preferences=role_pref_text,
             role_filter=", ".join(role_filter) if role_filter else "None",
             title=title or "N/A",
             team=team or "N/A",

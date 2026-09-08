@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +7,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from src.pipeline.ingestion_service import run_all
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Argus Ingestion API",
@@ -433,6 +436,53 @@ def api_list_users():
         return db.get_all_users()
     except Exception as exc:
         return []
+
+
+class PreferencesUpdateRequest(BaseModel):
+    email: Optional[str] = None
+    role_level: Optional[str] = "all"
+    locations: Optional[List[str]] = None
+    preferred_roles: Optional[List[str]] = None
+    focus_areas: Optional[List[str]] = None
+    target_company_ids: Optional[List[int]] = None
+    email_notifications_enabled: Optional[bool] = True
+    notification_email: Optional[str] = None
+
+
+@app.get("/auth/preferences")
+def api_get_preferences(email: Optional[str] = None):
+    """Fetches user preferences from Postgres."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    if email:
+        return db.get_user_preferences(email)
+    return db.get_active_preferences()
+
+
+@app.post("/auth/preferences")
+def api_save_preferences(req: PreferencesUpdateRequest):
+    """Saves user preferences in Postgres."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    pref_dict = {
+        "role_level": req.role_level or "all",
+        "locations": req.locations or [],
+        "preferred_roles": req.preferred_roles or [],
+        "focus_areas": req.focus_areas or [],
+        "target_company_ids": req.target_company_ids or [],
+        "email_notifications_enabled": req.email_notifications_enabled if req.email_notifications_enabled is not None else True,
+        "notification_email": req.notification_email or req.email,
+    }
+    user_identifier = req.email or (req.notification_email if req.notification_email else "active")
+    if user_identifier != "active":
+        saved = db.save_user_preferences(user_identifier, pref_dict)
+    else:
+        users = db.get_all_users()
+        if users:
+            saved = db.save_user_preferences(users[0]["id"], pref_dict)
+        else:
+            saved = pref_dict
+    return {"status": "ok", "preferences": saved}
 
 
 # =============================================================================

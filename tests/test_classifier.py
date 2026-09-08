@@ -93,6 +93,98 @@ class TestRelevanceClassifier(unittest.TestCase):
         self.assertFalse(res_no_match.relevant)
         self.assertIn("Missing company role filter", res_no_match.rationale)
 
+    def test_role_level_filter_intern_only(self):
+        """Verify role_level='intern' accepts internships and rejects new grad roles."""
+        # Should accept intern roles
+        res_intern = RelevanceClassifier.classify(
+            title="Software Engineering Intern - Backend",
+            team="Infrastructure",
+            role_level="intern",
+        )
+        self.assertTrue(res_intern.relevant)
+        self.assertIn("Intern", res_intern.rationale)
+
+        # Should reject new grad roles
+        res_new_grad = RelevanceClassifier.classify(
+            title="New Grad Software Engineer (2026)",
+            team="Backend Systems",
+            role_level="intern",
+        )
+        self.assertFalse(res_new_grad.relevant)
+        self.assertIn("user preference is Intern only", res_new_grad.rationale)
+
+    def test_role_level_filter_new_grad_only(self):
+        """Verify role_level='new_grad' accepts new grad roles and rejects internships."""
+        # Should accept new grad roles
+        res_new_grad = RelevanceClassifier.classify(
+            title="New Grad Software Engineer (2026)",
+            team="Backend Systems",
+            role_level="new_grad",
+        )
+        self.assertTrue(res_new_grad.relevant)
+        self.assertIn("New Grad", res_new_grad.rationale)
+
+        # Should reject intern roles
+        res_intern = RelevanceClassifier.classify(
+            title="Software Engineering Intern - Backend",
+            team="Infrastructure",
+            role_level="new_grad",
+        )
+        self.assertFalse(res_intern.relevant)
+        self.assertIn("user preference is New Grad only", res_intern.rationale)
+
+    def test_target_locations_filtering(self):
+        """Verify target_locations matches target countries and rejects non-matching ones."""
+        target_locs = ["India", "United States", "Remote"]
+
+        # In target: Bengaluru, India
+        res_in_india = RelevanceClassifier.classify(
+            title="Software Engineer Intern",
+            team="Backend",
+            location="Bengaluru, Karnataka, India",
+            target_locations=target_locs,
+        )
+        self.assertTrue(res_in_india.relevant)
+
+        # In target: San Francisco, USA (matched via city alias)
+        res_in_us = RelevanceClassifier.classify(
+            title="Software Engineer Intern",
+            team="Platform",
+            location="San Francisco, CA",
+            target_locations=target_locs,
+        )
+        self.assertTrue(res_in_us.relevant)
+
+        # In target: Remote
+        res_remote = RelevanceClassifier.classify(
+            title="Backend Engineer Intern - Remote",
+            team="Core",
+            location="Remote",
+            target_locations=target_locs,
+        )
+        self.assertTrue(res_remote.relevant)
+
+        # Out of target: London, United Kingdom
+        res_uk = RelevanceClassifier.classify(
+            title="Software Engineer Intern",
+            team="Trading Systems",
+            location="London, United Kingdom",
+            target_locations=target_locs,
+        )
+        self.assertFalse(res_uk.relevant)
+        self.assertIn("does not match target locations", res_uk.rationale)
+
+        # Out of target: Tokyo, Japan
+        res_japan = RelevanceClassifier.classify(
+            title="Software Engineer Intern",
+            team="Robotics",
+            location="Tokyo, Japan",
+            target_locations=target_locs,
+        )
+        self.assertFalse(res_japan.relevant)
+        self.assertIn("does not match target locations", res_japan.rationale)
+
 
 if __name__ == "__main__":
     unittest.main()
+

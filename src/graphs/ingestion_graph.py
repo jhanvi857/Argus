@@ -196,6 +196,8 @@ def classify_relevance(state: IngestionState) -> dict:
     location = state.get("location")
     deadline = state.get("deadline")
     role_filter = state.get("role_filter", [])
+    role_level = state.get("role_level") or "all"
+    target_locations = state.get("target_locations")
     raw_posting = state.get("raw_posting", {})
 
     if not title:
@@ -213,6 +215,8 @@ def classify_relevance(state: IngestionState) -> dict:
         team=team,
         location=location,
         role_filter=role_filter,
+        role_level=role_level,
+        target_locations=target_locations,
     )
 
     rule_dict = rule_result.model_dump()
@@ -241,6 +245,8 @@ def classify_relevance(state: IngestionState) -> dict:
         deadline=deadline,
         raw_context=raw_context,
         role_filter=role_filter,
+        role_level=role_level,
+        target_locations=target_locations,
     )
 
     llm_dict = llm_result.model_dump()
@@ -410,6 +416,8 @@ def process_new_posting(
     company: Company,
     role_filter: Optional[List[str]] = None,
     db_manager: Optional[Any] = None,
+    role_level: str = "all",
+    target_locations: Optional[List[str]] = None,
 ) -> IngestionState:
     """Runs a single new posting through the ingestion graph.
 
@@ -421,6 +429,8 @@ def process_new_posting(
         company: Company database record.
         role_filter: Company-specific role filter keywords.
         db_manager: Optional DatabaseManager instance for testing or persistence.
+        role_level: Target career level preference ('all', 'intern', 'new_grad').
+        target_locations: Optional list of preferred countries/regions.
 
     Returns:
         Final IngestionState with classification and dedup results.
@@ -430,6 +440,8 @@ def process_new_posting(
         "company_name": company.name,
         "raw_posting": extracted_posting.raw_json or {},
         "role_filter": role_filter or [],
+        "role_level": role_level,
+        "target_locations": target_locations,
         # Pre-populate from ExtractedPosting so extract_fields has fallbacks
         "external_id": extracted_posting.external_id,
         "title": extracted_posting.title,

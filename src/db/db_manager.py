@@ -51,6 +51,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';")
             conn.commit()
         return True
 
@@ -535,7 +536,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT id, name, email, is_active, created_at FROM users WHERE LOWER(email) = %s AND is_active = TRUE;",
+                    "SELECT id, name, email, is_active, preferences, created_at FROM users WHERE LOWER(email) = %s AND is_active = TRUE;",
                     (clean_email,),
                 )
                 row = cur.fetchone()
@@ -545,9 +546,67 @@ class DatabaseManager:
         """Retrieves all registered and active users."""
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT id, name, email, is_active, created_at FROM users WHERE is_active = TRUE ORDER BY id;")
+                cur.execute("SELECT id, name, email, is_active, preferences, created_at FROM users WHERE is_active = TRUE ORDER BY id;")
                 rows = cur.fetchall()
                 return [dict(r) for r in rows]
+
+    def get_user_preferences(self, user_id_or_email: Any) -> Dict[str, Any]:
+        """Retrieves preferences for a specific user ID or email."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                if isinstance(user_id_or_email, int) or (isinstance(user_id_or_email, str) and user_id_or_email.isdigit()):
+                    cur.execute("SELECT preferences FROM users WHERE id = %s;", (int(user_id_or_email),))
+                else:
+                    cur.execute("SELECT preferences FROM users WHERE LOWER(email) = %s;", (str(user_id_or_email).strip().lower(),))
+                row = cur.fetchone()
+                if row and row.get("preferences"):
+                    return dict(row["preferences"])
+        return {
+            "role_level": "all",
+            "locations": [],
+            "preferred_roles": [],
+            "focus_areas": [],
+            "target_company_ids": [],
+            "email_notifications_enabled": True,
+        }
+
+    def save_user_preferences(self, user_id_or_email: Any, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        """Saves or updates preferences JSONB for a user."""
+        pref_json = Json(preferences)
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                if isinstance(user_id_or_email, int) or (isinstance(user_id_or_email, str) and user_id_or_email.isdigit()):
+                    cur.execute(
+                        "UPDATE users SET preferences = %s, updated_at = NOW() WHERE id = %s RETURNING id, email, preferences;",
+                        (pref_json, int(user_id_or_email)),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE users SET preferences = %s, updated_at = NOW() WHERE LOWER(email) = %s RETURNING id, email, preferences;",
+                        (pref_json, str(user_id_or_email).strip().lower()),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+            if row:
+                return dict(row.get("preferences") or {})
+        return preferences
+
+    def get_active_preferences(self) -> Dict[str, Any]:
+        """Returns the primary active candidate's preferences for ingestion and notification filtering."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT preferences FROM users WHERE is_active = TRUE AND preferences IS NOT NULL ORDER BY id LIMIT 1;")
+                row = cur.fetchone()
+                if row and row.get("preferences"):
+                    return dict(row["preferences"])
+        return {
+            "role_level": "all",
+            "locations": [],
+            "preferred_roles": [],
+            "focus_areas": [],
+            "target_company_ids": [],
+            "email_notifications_enabled": True,
+        }
 
     def get_pending_by_company(self, company: Optional[str] = None) -> List[Dict[str, Any]]:
         """Retrieves pending postings and in-flight applications for a company or all companies.
