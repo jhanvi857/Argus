@@ -7,6 +7,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Posting, Company, PostingStatus } from '../../types';
+import { GLOBAL_COUNTRIES } from '../../data/countries';
 
 interface OpportunitiesViewProps {
   postings: Posting[];
@@ -18,95 +19,24 @@ interface OpportunitiesViewProps {
   onSearchChange: (q: string) => void;
 }
 
-interface LocationPreset {
-  id: string;
-  label: string;
-  keywords: string[];
-}
+export const isInternPosting = (p: Posting): boolean => {
+  const text = `${p.title || ''} ${p.team || ''}`.toLowerCase();
+  return /\b(intern|internship|summer\s+analyst|co-?op|undergrad|student|campus)\b/i.test(text);
+};
 
-const LOCATION_PRESETS: LocationPreset[] = [
-  { id: 'all', label: 'All Global Locations', keywords: [] },
-  { 
-    id: 'us', 
-    label: 'United States (US)', 
-    keywords: ['united states', 'usa', 'us', 'san francisco', 'new york', 'seattle', 'chicago', 'austin', 'sunnyvale', 'mountain view', 'menlo park', 'cupertino', 'palo alto', 'cambridge, ma', 'boston', 'california', 'texas', 'washington', 'berkeley', 'los angeles', 'redmond'] 
-  },
-  { 
-    id: 'india', 
-    label: 'India', 
-    keywords: ['india', 'bengaluru', 'bangalore', 'hyderabad', 'gurugram', 'gurgaon', 'noida', 'pune', 'mumbai', 'delhi', 'chennai', 'kolkata'] 
-  },
-  { 
-    id: 'uk', 
-    label: 'United Kingdom (UK)', 
-    keywords: ['uk', 'united kingdom', 'london', 'england', 'cambridge', 'edinburgh', 'oxford', 'manchester'] 
-  },
-  { 
-    id: 'ireland', 
-    label: 'Ireland', 
-    keywords: ['ireland', 'dublin', 'cork', 'galway'] 
-  },
-  { 
-    id: 'germany', 
-    label: 'Germany', 
-    keywords: ['germany', 'berlin', 'munich', 'frankfurt', 'hamburg', 'stuttgart', 'walldorf'] 
-  },
-  { 
-    id: 'switzerland', 
-    label: 'Switzerland', 
-    keywords: ['switzerland', 'zurich', 'geneva', 'lausanne', 'basel'] 
-  },
-  { 
-    id: 'canada', 
-    label: 'Canada', 
-    keywords: ['canada', 'toronto', 'vancouver', 'waterloo', 'montreal', 'ottawa'] 
-  },
-  { 
-    id: 'singapore', 
-    label: 'Singapore', 
-    keywords: ['singapore'] 
-  },
-  { 
-    id: 'netherlands', 
-    label: 'Netherlands', 
-    keywords: ['netherlands', 'amsterdam', 'rotterdam', 'utrecht', 'eindhoven'] 
-  },
-  { 
-    id: 'france', 
-    label: 'France', 
-    keywords: ['france', 'paris', 'lyon', 'toulouse', 'grenoble'] 
-  },
-  { 
-    id: 'australia', 
-    label: 'Australia', 
-    keywords: ['australia', 'sydney', 'melbourne', 'brisbane'] 
-  },
-  { 
-    id: 'japan', 
-    label: 'Japan', 
-    keywords: ['japan', 'tokyo', 'osaka', 'kyoto'] 
-  },
-  { 
-    id: 'poland', 
-    label: 'Poland', 
-    keywords: ['poland', 'warsaw', 'krakow', 'wroclaw'] 
-  },
-  { 
-    id: 'israel', 
-    label: 'Israel', 
-    keywords: ['israel', 'tel aviv', 'haifa', 'herzliya', 'jerusalem'] 
-  },
-  { 
-    id: 'uae', 
-    label: 'United Arab Emirates (UAE)', 
-    keywords: ['uae', 'united arab emirates', 'dubai', 'abu dhabi'] 
-  },
-  { 
-    id: 'remote', 
-    label: 'Remote / Virtual', 
-    keywords: ['remote', 'virtual', 'work from home', 'anywhere'] 
-  }
-];
+export const isExperiencedPosting = (p: Posting): boolean => {
+  const text = `${p.title || ''} ${p.team || ''}`.toLowerCase();
+  const hasIntern = /\b(intern|internship|summer\s+analyst|co-?op|undergrad|student|campus)\b/i.test(text);
+  const hasExpOrFullTime = /\b(sde\s*[1-2iI]+|software\s+engineer|backend\s+engineer|systems\s+engineer|infrastructure\s+engineer|engineer\s*[1-2iI]+|developer)\b/i.test(text);
+  return !hasIntern && hasExpOrFullTime;
+};
+
+export const isNewGradPosting = (p: Posting): boolean => {
+  const text = `${p.title || ''} ${p.team || ''}`.toLowerCase();
+  const hasNewGrad = /\b(new\s+grad|new\s+graduate|graduate|entry\s+level|college\s+grad|university\s+graduate|associate\s+software|associate\s+engineer|rotational)\b/i.test(text);
+  const hasIntern = /\b(intern|internship|summer\s+analyst|co-?op)\b/i.test(text);
+  return hasNewGrad && !hasIntern;
+};
 
 export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   postings,
@@ -116,18 +46,19 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   onSearchChange
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [roleLevelFilter, setRoleLevelFilter] = useState<'all' | 'intern' | 'new_grad' | 'experienced'>('all');
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
   const [filterOnlyRelevant, setFilterOnlyRelevant] = useState<boolean>(true);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
 
-  // Helper to test if a posting matches a country/region preset
-  const matchesLocationPreset = (p: Posting, presetId: string): boolean => {
-    if (presetId === 'all') return true;
-    const preset = LOCATION_PRESETS.find(lp => lp.id === presetId);
-    if (!preset || preset.keywords.length === 0) return true;
+  // Helper to test if a posting matches a country preset
+  const matchesLocationPreset = (p: Posting, countryId: string): boolean => {
+    if (countryId === 'all') return true;
+    const country = GLOBAL_COUNTRIES.find(c => c.id === countryId);
+    if (!country || country.keywords.length === 0) return true;
     const locStr = typeof p.location === 'string' ? p.location : (p.location as any)?.name || 'Multiple Locations';
     const text = (locStr + ' ' + (p.title || '')).toLowerCase();
-    return preset.keywords.some(k => {
+    return country.keywords.some(k => {
       if (k.length <= 3) {
         return new RegExp(`\\b${k}\\b`, 'i').test(text);
       }
@@ -135,15 +66,18 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
     });
   };
 
-  const getLocationCount = (presetId: string): number => {
-    if (presetId === 'all') return postings.length;
-    return postings.filter(p => matchesLocationPreset(p, presetId)).length;
+  const getLocationCount = (countryId: string): number => {
+    if (countryId === 'all') return postings.length;
+    return postings.filter(p => matchesLocationPreset(p, countryId)).length;
   };
 
   // Filter list
   const filteredPostings = postings.filter(p => {
     if (filterOnlyRelevant && !p.relevant) return false;
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+    if (roleLevelFilter === 'intern' && !isInternPosting(p)) return false;
+    if (roleLevelFilter === 'new_grad' && !isNewGradPosting(p)) return false;
+    if (roleLevelFilter === 'experienced' && !isExperiencedPosting(p)) return false;
     if (selectedCompanyId !== null && p.company_id !== selectedCompanyId) return false;
     if (selectedLocation !== 'all' && !matchesLocationPreset(p, selectedLocation)) return false;
     if (searchQuery) {
@@ -184,6 +118,14 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
     applied: postings.filter(p => p.status === 'applied').length,
     ignored: postings.filter(p => p.status === 'ignored').length
   };
+
+  const roleCounts = {
+    all: postings.length,
+    intern: postings.filter(p => isInternPosting(p)).length,
+    new_grad: postings.filter(p => isNewGradPosting(p)).length,
+    experienced: postings.filter(p => isExperiencedPosting(p)).length
+  };
+
 
   return (
     <div>
@@ -267,8 +209,8 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
             ))}
           </div>
 
-          {/* Company & Location Dropdowns */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Company & Global Location Dropdowns */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <select
               className="form-select"
               value={selectedCompanyId === null ? 'all' : selectedCompanyId}
@@ -287,18 +229,136 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
               className="form-select"
               value={selectedLocation}
               onChange={e => setSelectedLocation(e.target.value)}
-              style={{ fontSize: '12.5px', padding: '6px 10px', height: '34px', minWidth: '185px' }}
+              style={{ fontSize: '12.5px', padding: '6px 10px', height: '34px', minWidth: '220px' }}
             >
-              {LOCATION_PRESETS.map(preset => {
-                const count = getLocationCount(preset.id);
+              <option value="all">All Global Locations ({postings.length})</option>
+              {['Remote', 'Americas', 'Europe', 'Asia Pacific', 'Middle East & Africa'].map(region => {
+                const regionCountries = GLOBAL_COUNTRIES.filter(c => c.region === region);
                 return (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.label} {preset.id !== 'all' ? `(${count})` : `(${postings.length})`}
-                  </option>
+                  <optgroup key={region} label={region}>
+                    {regionCountries.map(country => {
+                      const count = getLocationCount(country.id);
+                      return (
+                        <option key={country.id} value={country.id}>
+                          {country.name} {count > 0 ? `(${count})` : ''}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
                 );
               })}
             </select>
           </div>
+        </div>
+
+        {/* Role Type Filter Bar (Intern vs New Grad) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          paddingTop: '6px',
+          borderTop: '1px solid var(--gray-100)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-600)' }}>Role Type:</span>
+            
+            <button
+              type="button"
+              onClick={() => setRoleLevelFilter('all')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                border: roleLevelFilter === 'all' ? '1.5px solid var(--primary-navy)' : '1px solid var(--gray-300)',
+                backgroundColor: roleLevelFilter === 'all' ? 'var(--primary-navy)' : 'var(--bg-white)',
+                color: roleLevelFilter === 'all' ? 'white' : 'var(--gray-700)',
+                cursor: 'pointer',
+                transition: 'all 0.1s ease'
+              }}
+            >
+              All Types ({roleCounts.all})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRoleLevelFilter('intern')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                border: roleLevelFilter === 'intern' ? '1.5px solid #2563eb' : '1px solid var(--gray-300)',
+                backgroundColor: roleLevelFilter === 'intern' ? '#2563eb' : 'var(--bg-white)',
+                color: roleLevelFilter === 'intern' ? 'white' : '#1d4ed8',
+                cursor: 'pointer',
+                transition: 'all 0.1s ease'
+              }}
+            >
+              Internships Only ({roleCounts.intern})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRoleLevelFilter('new_grad')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                border: roleLevelFilter === 'new_grad' ? '1.5px solid #059669' : '1px solid var(--gray-300)',
+                backgroundColor: roleLevelFilter === 'new_grad' ? '#059669' : 'var(--bg-white)',
+                color: roleLevelFilter === 'new_grad' ? 'white' : '#047857',
+                cursor: 'pointer',
+                transition: 'all 0.1s ease'
+              }}
+            >
+              New Grad Only ({roleCounts.new_grad})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRoleLevelFilter('experienced')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                border: roleLevelFilter === 'experienced' ? '1.5px solid #b45309' : '1px solid var(--gray-300)',
+                backgroundColor: roleLevelFilter === 'experienced' ? '#b45309' : 'var(--bg-white)',
+                color: roleLevelFilter === 'experienced' ? 'white' : '#b45309',
+                cursor: 'pointer',
+                transition: 'all 0.1s ease'
+              }}
+            >
+              Experienced / Industry ({roleCounts.experienced})
+            </button>
+          </div>
+
+
+          {(roleLevelFilter !== 'all' || selectedLocation !== 'all' || selectedCompanyId !== null) && (
+            <button
+              type="button"
+              onClick={() => {
+                setRoleLevelFilter('all');
+                setSelectedLocation('all');
+                setSelectedCompanyId(null);
+              }}
+              style={{
+                fontSize: '11.5px',
+                color: 'var(--accent-crimson)',
+                background: 'none',
+                border: 'none',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
 
         {/* Search Bar Input */}

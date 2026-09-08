@@ -88,6 +88,9 @@ export const App: React.FC = () => {
     const unsubscribe = AuthService.subscribe((user) => {
       setCurrentUser(user);
       setAllUsers(AuthService.getAllUsers());
+      if (!user) {
+        setCurrentRoute('landing');
+      }
       refreshData();
     });
     return () => {
@@ -102,6 +105,13 @@ export const App: React.FC = () => {
   const profileCompletion = ArgusDataService.getProfileCompletion();
 
   // Handlers
+  const handleLogout = useCallback(() => {
+    AuthService.logout();
+    setCurrentUser(null);
+    setCurrentRoute('landing');
+    refreshData();
+  }, [refreshData]);
+
   const handleNavigate = (route: AppRoute) => {
     setCurrentRoute(route);
     window.scrollTo(0, 0);
@@ -194,11 +204,7 @@ export const App: React.FC = () => {
       <LandingPage
         onNavigate={handleNavigate}
         currentUser={currentUser}
-        onLogout={() => {
-          AuthService.logout();
-          setCurrentUser(null);
-          refreshData();
-        }}
+        onLogout={handleLogout}
       />
     );
   }
@@ -249,6 +255,7 @@ export const App: React.FC = () => {
       currentUser={currentUser}
       allUsers={allUsers}
       onSwitchUser={handleSwitchUser}
+      onLogout={handleLogout}
       newPostingsCount={newRelevantPostingsCount}
       inFlightAppsCount={inFlightAppsCount}
       searchQuery={searchQuery}
@@ -368,6 +375,7 @@ export const App: React.FC = () => {
           currentUser={currentUser}
           onNavigate={handleNavigate}
           onRefresh={refreshData}
+          onLogout={handleLogout}
         />
       )}
 

@@ -549,7 +549,7 @@ export const ExperiencesPanel: React.FC<ExperiencesPanelProps> = ({
                 {item.takeaways && (
                   <div style={{ fontSize: '12.5px', color: 'var(--gray-700)', lineHeight: 1.5, background: '#f8fafc', padding: '8px 12px', borderRadius: 'var(--border-radius-sm)', border: '1px solid #e2e8f0' }}>
                     <div style={{ fontWeight: 700, color: 'var(--gray-900)', fontSize: '11.5px', marginBottom: '2px' }}>
-                      💡 Candidate Reflection & Tips:
+                      Candidate Reflection & Tips:
                     </div>
                     <MarkdownView content={item.takeaways} />
                   </div>
@@ -566,7 +566,7 @@ export const ExperiencesPanel: React.FC<ExperiencesPanelProps> = ({
                     color: '#15803d',
                     fontWeight: 600
                   }}>
-                    🎉 <strong>Offer Details:</strong> {item.offer_details}
+                    <strong>Offer Details:</strong> {item.offer_details}
                   </div>
                 )}
 

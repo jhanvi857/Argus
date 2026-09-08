@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Mail, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Mail, CheckCircle2, RefreshCw, Briefcase, Globe, GraduationCap, Check, X, Sliders } from 'lucide-react';
 import { AppRoute, UserProfile } from '../../types';
 import { AuthService } from '../../services/auth';
 
@@ -29,6 +29,55 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
+
+  // User Preferences State during Signup
+  const [roleLevel, setRoleLevel] = useState<'all' | 'intern' | 'new_grad'>('all');
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([
+    'Software Engineer Intern',
+    'Software Engineer New Grad'
+  ]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([
+    'India',
+    'Remote / Anywhere'
+  ]);
+  const [customRoleInput, setCustomRoleInput] = useState('');
+  const [customLocationInput, setCustomLocationInput] = useState('');
+
+  const toggleRole = (role: string) => {
+    if (selectedRoles.includes(role)) {
+      if (selectedRoles.length > 1) {
+        setSelectedRoles(selectedRoles.filter(r => r !== role));
+      }
+    } else {
+      setSelectedRoles([...selectedRoles, role]);
+    }
+  };
+
+  const handleAddCustomRole = () => {
+    const trimmed = customRoleInput.trim();
+    if (trimmed && !selectedRoles.includes(trimmed)) {
+      setSelectedRoles([...selectedRoles, trimmed]);
+      setCustomRoleInput('');
+    }
+  };
+
+  const toggleLocation = (loc: string) => {
+    if (selectedLocations.includes(loc)) {
+      if (selectedLocations.length > 1) {
+        setSelectedLocations(selectedLocations.filter(l => l !== loc));
+      }
+    } else {
+      setSelectedLocations([...selectedLocations, loc]);
+    }
+  };
+
+  const handleAddCustomLocation = () => {
+    const trimmed = customLocationInput.trim();
+    if (trimmed && !selectedLocations.includes(trimmed)) {
+      setSelectedLocations([...selectedLocations, trimmed]);
+      setCustomLocationInput('');
+    }
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +112,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     setIsSendingOtp(true);
     try {
-      const res = await AuthService.sendOtp(email.trim(), fullName.trim());
+      const preferences = {
+        role_level: roleLevel,
+        preferred_roles: selectedRoles,
+        locations: selectedLocations,
+        focus_areas: ['Backend', 'Infrastructure', 'Distributed Systems'],
+        email_notifications_enabled: true,
+        notification_email: email.trim()
+      };
+      const res = await AuthService.sendOtp(email.trim(), fullName.trim(), preferences);
       setSuccessMsg(res.message);
       if (res.devOtp) {
         setDevOtpHint(res.devOtp);
@@ -88,14 +145,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     setIsVerifyingOtp(true);
     try {
-      await AuthService.verifyOtpAndRegister(email.trim(), otpCode.trim());
+      const preferences = {
+        role_level: roleLevel,
+        preferred_roles: selectedRoles,
+        locations: selectedLocations,
+        focus_areas: ['Backend', 'Infrastructure', 'Distributed Systems'],
+        email_notifications_enabled: true,
+        notification_email: email.trim()
+      };
+      await AuthService.verifyOtpAndRegister(email.trim(), otpCode.trim(), preferences);
       // Upon successful verification:
-      // User is inserted into DB, now redirect to login tab so they sign in with verified credentials
+      // User is inserted into DB with custom preferences
       setSignupStep('details');
       setOtpCode('');
       setDevOtpHint(null);
       setActiveTab('login');
-      setSuccessMsg('Email verified successfully! Your account is active. Please log in.');
+      setSuccessMsg('Email verified successfully! Your profile & preferences are registered. Please log in.');
     } catch (err: any) {
       setErrorMsg(err.message || 'Verification failed. Please check the code and try again.');
     } finally {
@@ -608,6 +673,312 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   boxSizing: 'border-box'
                 }}
               />
+            </div>
+
+            {/* ── Job & Matching Preferences ── */}
+            <div style={{
+              backgroundColor: '#faf8f5',
+              border: '1px solid #ede8de',
+              borderRadius: '10px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              marginTop: '4px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sliders size={16} color="#ad2831" />
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#1a1a16' }}>
+                    Job & Matching Preferences
+                  </span>
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#8c8c7f', textTransform: 'uppercase' }}>
+                  Customizable
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: '#6b6b5e', margin: 0, lineHeight: 1.4 }}>
+                Argus scans official ATS pages matching only the roles and locations you specify.
+              </p>
+
+              {/* 1. Target Role Level */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#33332d', marginBottom: '8px' }}>
+                  <GraduationCap size={14} color="#ad2831" />
+                  <span>Target Role Level</span>
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  {[
+                    { id: 'all', label: 'All Levels' },
+                    { id: 'intern', label: 'Internship' },
+                    { id: 'new_grad', label: 'New Grad' }
+                  ].map(lvl => {
+                    const isSel = roleLevel === lvl.id;
+                    return (
+                      <button
+                        key={lvl.id}
+                        type="button"
+                        onClick={() => setRoleLevel(lvl.id as any)}
+                        style={{
+                          padding: '7px 8px',
+                          borderRadius: '6px',
+                          border: isSel ? '1.5px solid #ad2831' : '1px solid #ede8de',
+                          backgroundColor: isSel ? 'rgba(173, 40, 49, 0.08)' : '#ffffff',
+                          color: isSel ? '#ad2831' : '#55554b',
+                          fontSize: '11.5px',
+                          fontWeight: isSel ? 700 : 500,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {lvl.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Target Roles */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#33332d', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Briefcase size={14} color="#ad2831" />
+                    <span>Preferred Roles</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#8c8c7f', fontWeight: 400 }}>({selectedRoles.length} selected)</span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[
+                    'Software Engineer Intern',
+                    'Software Engineer New Grad',
+                    'Backend Engineer',
+                    'Infrastructure / Systems',
+                    'Full Stack Engineer',
+                    'Site Reliability (SRE)'
+                  ].map(role => {
+                    const isSel = selectedRoles.includes(role);
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => toggleRole(role)}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '9999px',
+                          border: isSel ? '1.5px solid #ad2831' : '1px solid #ede8de',
+                          backgroundColor: isSel ? 'rgba(173, 40, 49, 0.08)' : '#ffffff',
+                          color: isSel ? '#ad2831' : '#55554b',
+                          fontSize: '11.5px',
+                          fontWeight: isSel ? 600 : 500,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {isSel && <Check size={12} strokeWidth={2.5} />}
+                        <span>{role}</span>
+                      </button>
+                    );
+                  })}
+                  {/* Custom roles */}
+                  {selectedRoles.filter(r => ![
+                    'Software Engineer Intern',
+                    'Software Engineer New Grad',
+                    'Backend Engineer',
+                    'Infrastructure / Systems',
+                    'Full Stack Engineer',
+                    'Site Reliability (SRE)'
+                  ].includes(r)).map(r => (
+                    <span
+                      key={r}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: '9999px',
+                        border: '1.5px solid #ad2831',
+                        backgroundColor: 'rgba(173, 40, 49, 0.08)',
+                        color: '#ad2831',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Check size={12} strokeWidth={2.5} />
+                      <span>{r}</span>
+                      <X
+                        size={12}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => toggleRole(r)}
+                      />
+                    </span>
+                  ))}
+                </div>
+
+                {/* Add Custom Role Input */}
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  <input
+                    type="text"
+                    value={customRoleInput}
+                    onChange={e => setCustomRoleInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomRole();
+                      }
+                    }}
+                    placeholder="Add custom role..."
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #ede8de',
+                      fontSize: '12px',
+                      outline: 'none',
+                      backgroundColor: '#ffffff'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomRole}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #ede8de',
+                      backgroundColor: '#ffffff',
+                      color: '#1a1a16',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Target Locations */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#33332d', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Globe size={14} color="#ad2831" />
+                    <span>Target Locations</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#8c8c7f', fontWeight: 400 }}>({selectedLocations.length} selected)</span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[
+                    'India',
+                    'Remote / Anywhere',
+                    'United States',
+                    'United Kingdom',
+                    'Singapore',
+                    'Europe'
+                  ].map(loc => {
+                    const isSel = selectedLocations.includes(loc);
+                    return (
+                      <button
+                        key={loc}
+                        type="button"
+                        onClick={() => toggleLocation(loc)}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '9999px',
+                          border: isSel ? '1.5px solid #ad2831' : '1px solid #ede8de',
+                          backgroundColor: isSel ? 'rgba(173, 40, 49, 0.08)' : '#ffffff',
+                          color: isSel ? '#ad2831' : '#55554b',
+                          fontSize: '11.5px',
+                          fontWeight: isSel ? 600 : 500,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {isSel && <Check size={12} strokeWidth={2.5} />}
+                        <span>{loc}</span>
+                      </button>
+                    );
+                  })}
+                  {/* Custom locations */}
+                  {selectedLocations.filter(l => ![
+                    'India',
+                    'Remote / Anywhere',
+                    'United States',
+                    'United Kingdom',
+                    'Singapore',
+                    'Europe'
+                  ].includes(l)).map(l => (
+                    <span
+                      key={l}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: '9999px',
+                        border: '1.5px solid #ad2831',
+                        backgroundColor: 'rgba(173, 40, 49, 0.08)',
+                        color: '#ad2831',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Check size={12} strokeWidth={2.5} />
+                      <span>{l}</span>
+                      <X
+                        size={12}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => toggleLocation(l)}
+                      />
+                    </span>
+                  ))}
+                </div>
+
+                {/* Add Custom Location Input */}
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  <input
+                    type="text"
+                    value={customLocationInput}
+                    onChange={e => setCustomLocationInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomLocation();
+                      }
+                    }}
+                    placeholder="Add custom location (e.g. Canada, Germany, Bengaluru)..."
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #ede8de',
+                      fontSize: '12px',
+                      outline: 'none',
+                      backgroundColor: '#ffffff'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomLocation}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #ede8de',
+                      backgroundColor: '#ffffff',
+                      color: '#1a1a16',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
             </div>
 
             <button

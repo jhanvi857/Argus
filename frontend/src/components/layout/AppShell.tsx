@@ -20,6 +20,7 @@ interface AppShellProps {
   telemetry: IngestionTelemetry;
   profileCompletion: { percentage: number; checklist: { name: string; completed: boolean; link: string }[] };
   onOpenNewUserModal: () => void;
+  onLogout?: () => void;
   children: React.ReactNode;
 }
 
@@ -38,6 +39,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   telemetry,
   profileCompletion,
   onOpenNewUserModal,
+  onLogout,
   children
 }) => {
   const [telemetryOpen, setTelemetryOpen] = useState(false);
@@ -67,6 +69,10 @@ export const AppShell: React.FC<AppShellProps> = ({
           onNavigate={(route) => {
             onNavigate(route);
             setMobileMenuOpen(false);
+          }}
+          onLogout={() => {
+            setMobileMenuOpen(false);
+            if (onLogout) onLogout();
           }}
           currentUser={currentUser}
           allUsers={allUsers}

@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   Bell,
-  Menu
+  Menu,
+  SlidersHorizontal,
+  Globe
 } from 'lucide-react';
 import { UserProfile, AppRoute } from '../../types';
 
@@ -39,6 +41,46 @@ export const Topbar: React.FC<TopbarProps> = ({
           <Menu size={18} />
         </button>
       </div>
+
+      {/* Center: Quick Preferences & Differential Status Pill */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          onClick={() => onNavigate('preferences')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '5px 12px',
+            borderRadius: '16px',
+            backgroundColor: 'var(--cream-light)',
+            border: '1px solid var(--border-subtle)',
+            fontSize: '12px',
+            color: 'var(--gray-800)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+          title="Click to change your career stage (Intern / New Grad / Experienced), target countries, and role preferences"
+        >
+          <SlidersHorizontal size={13} color="var(--primary-navy)" />
+          <span style={{ fontWeight: 700, color: 'var(--primary-navy)' }}>
+            {currentUser.preferences?.role_level === 'intern'
+              ? 'Internships'
+              : currentUser.preferences?.role_level === 'new_grad'
+                ? 'New Grad'
+                : currentUser.preferences?.role_level === 'experienced'
+                  ? 'Experienced / SDE'
+                  : 'All Levels'}
+          </span>
+          <span style={{ color: 'var(--gray-400)' }}>•</span>
+          <span style={{ color: 'var(--gray-600)', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <Globe size={11} />
+            {currentUser.preferences?.locations?.length
+              ? `${currentUser.preferences.locations.length} Countries`
+              : 'Global'}
+          </span>
+        </button>
+      </div>
+
 
       {/* Right: Notification bell + User avatar */}
       <div className="topbar-actions">

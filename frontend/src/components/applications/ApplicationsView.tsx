@@ -42,7 +42,7 @@ const stageConfig: Record<string, { label: string; bg: string; color: string; bo
   applied: { label: 'Applied', bg: 'rgba(173,40,49,0.08)', color: 'var(--primary)', border: 'rgba(173,40,49,0.2)' },
   oa: { label: 'OA Assessment', bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
   interview: { label: 'Interviewing', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-  offer: { label: 'Offer Received 🎉', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
+  offer: { label: 'Offer Received', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
   rejected: { label: 'Rejected', bg: 'var(--gray-100)', color: 'var(--gray-500)', border: 'var(--gray-200)' },
   withdrawn: { label: 'Withdrawn', bg: 'var(--gray-100)', color: 'var(--gray-500)', border: 'var(--gray-200)' }
 };
@@ -79,7 +79,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
     { id: 'applied', label: 'Applied' },
     { id: 'oa', label: 'OA Assessment' },
     { id: 'interview', label: 'Interview Round' },
-    { id: 'offer', label: 'Offer Received 🎉' },
+    { id: 'offer', label: 'Offer Received' },
     { id: 'rejected', label: 'Rejected / Closed' }
   ];
 
@@ -95,7 +95,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
     { id: 'applied', label: 'Applied', count: appliedCount },
     { id: 'oa', label: 'OA Stage', count: oaCount },
     { id: 'interview', label: 'Interviewing', count: interviewCount },
-    { id: 'offer', label: 'Offers 🎉', count: offerCount },
+    { id: 'offer', label: 'Offers', count: offerCount },
     { id: 'rejected', label: 'Archived', count: applications.filter(a => a.stage === 'rejected' || a.stage === 'withdrawn').length }
   ];
 
@@ -249,7 +249,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
             Offers Received
           </div>
           <div style={{ fontSize: '24px', fontWeight: 800, color: '#15803d', marginTop: '4px' }}>
-            {offerCount} 🎉
+            {offerCount}
           </div>
         </div>
       </div>
@@ -418,7 +418,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                         color: '#15803d',
                         fontWeight: 600
                       }}>
-                        🎉 <strong>Offer Details:</strong> {app.offer_details}
+                        <strong>Offer Details:</strong> {app.offer_details}
                       </div>
                     )}
                   </div>
@@ -435,13 +435,13 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: 'var(--gray-500)' }}>
                     {app.resume_version && (
-                      <span>📄 <strong>Resume:</strong> {app.resume_version}</span>
+                      <span><strong>Resume:</strong> {app.resume_version}</span>
                     )}
                     {app.referral_status !== 'none' && (
-                      <span>🤝 <strong>Referral:</strong> {app.referral_status}</span>
+                      <span><strong>Referral:</strong> {app.referral_status}</span>
                     )}
                     {app.oa_date && (
-                      <span>⏰ <strong>OA Date:</strong> {app.oa_date}</span>
+                      <span><strong>OA Date:</strong> {app.oa_date}</span>
                     )}
                   </div>
 
@@ -588,7 +588,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                 {stage === 'offer' && (
                   <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
                     <label className="form-label" style={{ color: '#15803d', fontWeight: 700, fontSize: '12.5px', margin: 0 }}>
-                      🎉 Offer Details & Compensation
+                      Offer Details & Compensation
                     </label>
                     <input
                       type="text"

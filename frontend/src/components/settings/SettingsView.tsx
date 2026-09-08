@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Check, CheckCircle2, RotateCcw, LogOut } from 'lucide-react';
 import { UserProfile, AppRoute } from '../../types';
 import { AuthService } from '../../services/auth';
 import { ArgusDataService } from '../../services/api';
@@ -8,12 +8,14 @@ interface SettingsViewProps {
   currentUser: UserProfile;
   onNavigate: (route: AppRoute) => void;
   onRefresh: () => void;
+  onLogout?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   currentUser,
   onNavigate,
-  onRefresh
+  onRefresh,
+  onLogout
 }) => {
   const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [headline, setHeadline] = useState(currentUser.headline || '');
@@ -165,6 +167,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button className="btn-secondary btn-sm" onClick={() => alert('Password successfully updated (simulated).')}>
             Update Password
           </button>
+        </div>
+
+        {/* Account Session & Logout */}
+        <div className="card-surface" style={{ padding: '24px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary-navy)', marginBottom: '6px' }}>
+            Account Session
+          </h3>
+          <p style={{ fontSize: '12.5px', color: 'var(--gray-600)', marginBottom: '16px' }}>
+            Sign out of your active session on this device.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--gray-800)' }}>
+                Active Profile ({currentUser.full_name || currentUser.email || 'Candidate'})
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--gray-500)' }}>
+                Clears your current authentication token and returns to the welcome screen.
+              </div>
+            </div>
+
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => {
+                if (onLogout) {
+                  onLogout();
+                } else {
+                  AuthService.logout();
+                  onNavigate('landing');
+                }
+              }}
+              style={{ color: '#ad2831', borderColor: '#fed7d7' }}
+            >
+              <LogOut size={13} />
+              <span>Log out</span>
+            </button>
+          </div>
         </div>
 
         {/* Danger Zone */}

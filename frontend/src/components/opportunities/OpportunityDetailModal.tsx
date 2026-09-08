@@ -423,7 +423,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                       { id: 'applied', label: 'Applied' },
                       { id: 'oa', label: 'OA Assessment' },
                       { id: 'interview', label: 'Interview' },
-                      { id: 'offer', label: 'Offer 🎉' }
+                      { id: 'offer', label: 'Offer' }
                     ].map(s => {
                       const isSelected = currentApp?.stage === s.id;
                       return (
@@ -583,7 +583,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                       )}
                       {currentApp.offer_details && (
                         <p style={{ margin: 0, fontSize: '12px', color: '#15803d', fontWeight: 600 }}>
-                          🎉 <strong>Offer:</strong> {currentApp.offer_details}
+                          <strong>Offer:</strong> {currentApp.offer_details}
                         </p>
                       )}
                     </div>

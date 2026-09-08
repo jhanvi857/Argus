@@ -6,6 +6,7 @@ import {
   Wrench,
   ClipboardList,
   User,
+  SlidersHorizontal,
   Settings,
   LogOut,
   ChevronDown,
@@ -24,6 +25,7 @@ interface SidebarProps {
   newPostingsCount: number;
   inFlightAppsCount: number;
   onOpenNewUserModal: () => void;
+  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSwitchUser,
   newPostingsCount,
   inFlightAppsCount,
-  onOpenNewUserModal
+  onOpenNewUserModal,
+  onLogout
 }) => {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
@@ -51,6 +54,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Briefcase,
       badge: newPostingsCount > 0 ? newPostingsCount : null,
       badgeCrimson: true
+    },
+    {
+      route: 'preferences' as AppRoute,
+      label: 'Preferences',
+      icon: SlidersHorizontal,
+      badge: null
     },
     {
       route: 'profile_projects' as AppRoute,
@@ -217,8 +226,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             className="sidebar-nav-item"
             onClick={() => {
-              AuthService.logout();
-              onNavigate('landing');
+              if (onLogout) {
+                onLogout();
+              } else {
+                AuthService.logout();
+                onNavigate('landing');
+              }
             }}
             style={{ color: 'var(--gray-500)', fontSize: '13px' }}
           >

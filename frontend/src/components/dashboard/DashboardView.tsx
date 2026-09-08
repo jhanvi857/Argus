@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Radio,
   Zap,
@@ -7,9 +7,13 @@ import {
   Sparkles,
   Plus,
   Layers,
-  ArrowRight
+  ArrowRight,
+  SlidersHorizontal,
+  Globe
 } from 'lucide-react';
-import { UserProfile, Posting, Application, AppRoute, PostingStatus } from '../../types';
+import { UserProfile, Posting, Application, AppRoute, PostingStatus, UserPreferences } from '../../types';
+import { ArgusDataService } from '../../services/api';
+
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -63,6 +67,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const firstName = currentUser.full_name?.trim().split(' ')[0] || 'there';
+  const [activeRoleLevel, setActiveRoleLevel] = useState<'all' | 'intern' | 'new_grad' | 'experienced'>(
+    currentUser.preferences?.role_level || 'all'
+  );
+
+  const handleQuickSwitchRoleLevel = (lvl: 'all' | 'intern' | 'new_grad' | 'experienced') => {
+    setActiveRoleLevel(lvl);
+    const currentPref: UserPreferences = currentUser.preferences || {
+      target_company_ids: [],
+      preferred_roles: [],
+      focus_areas: [],
+      locations: [],
+      email_notifications_enabled: true,
+      notification_email: currentUser.email
+    };
+    ArgusDataService.savePreferences({
+      ...currentPref,
+      role_level: lvl
+    });
+  };
 
   // Derived real data strictly from state without any fake mock numbers
   const newRelevantPostings = postings.filter(p => p.status === 'new' && p.relevant);
@@ -143,7 +166,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div>
       {/* ── Greeting Header ── */}
-      <div style={{ marginBottom: '28px' }}>
+      <div style={{ marginBottom: '24px' }}>
         <h1 className="page-title" style={{ fontSize: '26px' }}>
           {getGreeting()}, {firstName}
         </h1>
@@ -152,7 +175,94 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </p>
       </div>
 
+      {/* ── Active Differential Preferences & 1-Click Stage Switcher ── */}
+      <div style={{
+        backgroundColor: 'var(--bg-white)',
+        border: '1.5px solid var(--gray-200)',
+        borderRadius: 'var(--border-radius-md)',
+        padding: '16px 20px',
+        marginBottom: '28px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '16px',
+        boxShadow: 'var(--shadow-xs)',
+        borderLeft: '4px solid var(--primary-navy)'
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <SlidersHorizontal size={16} color="var(--primary-navy)" />
+            <span style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--primary-navy)' }}>
+              Active Career Filters:
+            </span>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: '12px',
+              backgroundColor: activeRoleLevel === 'intern' ? '#eff6ff' : activeRoleLevel === 'new_grad' ? '#ecfdf5' : activeRoleLevel === 'experienced' ? '#fffbeb' : 'var(--gray-100)',
+              color: activeRoleLevel === 'intern' ? '#1d4ed8' : activeRoleLevel === 'new_grad' ? '#047857' : activeRoleLevel === 'experienced' ? '#b45309' : 'var(--gray-800)',
+              border: '1px solid currentColor'
+            }}>
+              {activeRoleLevel === 'intern' ? '🎓 Internships Only' : activeRoleLevel === 'new_grad' ? '🚀 New Grad Only' : activeRoleLevel === 'experienced' ? '💼 Experienced / Industry' : 'All Levels'}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--gray-400)' }}>•</span>
+            <span style={{ fontSize: '12px', color: 'var(--gray-700)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Globe size={13} color="var(--gray-500)" />
+              {currentUser.preferences?.locations?.length
+                ? `${currentUser.preferences.locations.slice(0, 3).join(', ')}${currentUser.preferences.locations.length > 3 ? ` +${currentUser.preferences.locations.length - 3} more` : ''}`
+                : 'All Countries / Global'}
+            </span>
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--gray-500)', margin: 0 }}>
+            Argus filters incoming career page postings and alerts you based on this stage and locations.
+          </p>
+        </div>
+
+        {/* 1-Click Career Level Switcher Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gray-500)' }}>Quick Switch:</span>
+          {[
+            { id: 'all', label: 'All Levels' },
+            { id: 'intern', label: 'Intern' },
+            { id: 'new_grad', label: 'New Grad' },
+            { id: 'experienced', label: 'Experienced' }
+          ].map(lvl => (
+            <button
+              key={lvl.id}
+              type="button"
+              onClick={() => handleQuickSwitchRoleLevel(lvl.id as any)}
+              style={{
+                fontSize: '11.5px',
+                fontWeight: activeRoleLevel === lvl.id ? 700 : 500,
+                padding: '4px 10px',
+                borderRadius: '14px',
+                border: activeRoleLevel === lvl.id ? '1.5px solid var(--primary-navy)' : '1px solid var(--gray-300)',
+                backgroundColor: activeRoleLevel === lvl.id ? 'var(--primary-navy)' : 'var(--bg-white)',
+                color: activeRoleLevel === lvl.id ? 'white' : 'var(--gray-700)',
+                cursor: 'pointer',
+                transition: 'all 0.1s ease'
+              }}
+            >
+              {lvl.label}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => onNavigate('preferences')}
+            className="btn-secondary"
+            style={{ fontSize: '11.5px', padding: '4px 10px', marginLeft: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <span>Change Filters</span>
+            <ArrowRight size={12} />
+          </button>
+        </div>
+      </div>
+
       {/* ── 4 Top Stat Cards ── */}
+
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
@@ -386,9 +496,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {dynamicActivities.map((item, i) => {
                   const dotColor =
                     item.type === 'posting' ? 'var(--primary)' :
-                    item.type === 'app' ? 'var(--color-success)' :
-                    item.type === 'match' ? 'var(--color-warning)' :
-                    '#6366f1';
+                      item.type === 'app' ? 'var(--color-success)' :
+                        item.type === 'match' ? 'var(--color-warning)' :
+                          '#6366f1';
 
                   return (
                     <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
