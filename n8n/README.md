@@ -104,7 +104,7 @@ ORDER BY p.first_seen_at ASC;
 const postings = $input.all().map(item => item.json);
 
 let html = `
-<h2>🚀 Argus — New Relevant Job Openings</h2>
+<h2> Argus — New Relevant Job Openings</h2>
 <p>Found ${postings.length} new relevant opportunities.</p>
 `;
 
