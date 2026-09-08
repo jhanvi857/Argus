@@ -51,7 +51,7 @@ export class ArgusDataService {
 
   // --- USER PROFILE & KNOWLEDGE BASE (SCOPED TO ACTIVE USER) ---
 
-  public static getCurrentUser(): UserProfile {
+  public static getCurrentUser(): UserProfile | null {
     return AuthService.getCurrentUser();
   }
 
@@ -62,11 +62,12 @@ export class ArgusDataService {
   // Projects CRUD
   public static getProjects(): Project[] {
     const user = this.getCurrentUser();
-    return user.projects || [];
+    return user?.projects || [];
   }
 
   public static saveProject(project: Project): Project[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.projects || []).findIndex(p => p.id === project.id);
     let updatedProjects: Project[];
 
@@ -86,6 +87,7 @@ export class ArgusDataService {
 
   public static deleteProject(projectId: string): Project[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updatedProjects = (user.projects || []).filter(p => p.id !== projectId);
     AuthService.updateCurrentUser({ projects: updatedProjects });
     this.clearUserMatches(user.id);
@@ -95,11 +97,12 @@ export class ArgusDataService {
   // Experience CRUD
   public static getExperiences(): Experience[] {
     const user = this.getCurrentUser();
-    return user.experiences || [];
+    return user?.experiences || [];
   }
 
   public static saveExperience(exp: Experience): Experience[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.experiences || []).findIndex(e => e.id === exp.id);
     let updated: Experience[];
 
@@ -118,6 +121,7 @@ export class ArgusDataService {
 
   public static deleteExperience(expId: string): Experience[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updated = (user.experiences || []).filter(e => e.id !== expId);
     AuthService.updateCurrentUser({ experiences: updated });
     this.clearUserMatches(user.id);
@@ -127,11 +131,12 @@ export class ArgusDataService {
   // Skills CRUD
   public static getSkills(): SkillItem[] {
     const user = this.getCurrentUser();
-    return user.skills || [];
+    return user?.skills || [];
   }
 
   public static saveSkill(skill: SkillItem): SkillItem[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.skills || []).findIndex(s => s.id === skill.id || s.name.toLowerCase() === skill.name.toLowerCase());
     let updated: SkillItem[];
 
@@ -150,6 +155,7 @@ export class ArgusDataService {
 
   public static deleteSkill(skillId: string): SkillItem[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updated = (user.skills || []).filter(s => s.id !== skillId);
     AuthService.updateCurrentUser({ skills: updated });
     this.clearUserMatches(user.id);
@@ -159,11 +165,12 @@ export class ArgusDataService {
   // Education CRUD
   public static getEducation(): Education[] {
     const user = this.getCurrentUser();
-    return user.education || [];
+    return user?.education || [];
   }
 
   public static saveEducation(edu: Education): Education[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.education || []).findIndex(e => e.id === edu.id);
     let updated: Education[];
 
@@ -181,6 +188,7 @@ export class ArgusDataService {
 
   public static deleteEducation(eduId: string): Education[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updated = (user.education || []).filter(e => e.id !== eduId);
     AuthService.updateCurrentUser({ education: updated });
     return updated;
@@ -189,11 +197,12 @@ export class ArgusDataService {
   // Achievements CRUD
   public static getAchievements(): Achievement[] {
     const user = this.getCurrentUser();
-    return user.achievements || [];
+    return user?.achievements || [];
   }
 
   public static saveAchievement(ach: Achievement): Achievement[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.achievements || []).findIndex(a => a.id === ach.id);
     let updated: Achievement[];
 
@@ -212,6 +221,7 @@ export class ArgusDataService {
 
   public static deleteAchievement(achId: string): Achievement[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updated = (user.achievements || []).filter(a => a.id !== achId);
     AuthService.updateCurrentUser({ achievements: updated });
     this.clearUserMatches(user.id);
@@ -221,11 +231,12 @@ export class ArgusDataService {
   // Resumes CRUD
   public static getResumes(): ResumeVersion[] {
     const user = this.getCurrentUser();
-    return user.resumes || [];
+    return user?.resumes || [];
   }
 
   public static saveResume(resume: ResumeVersion): ResumeVersion[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const existingIndex = (user.resumes || []).findIndex(r => r.id === resume.id);
     let updated: ResumeVersion[];
 
@@ -243,6 +254,7 @@ export class ArgusDataService {
 
   public static deleteResume(resumeId: string): ResumeVersion[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const updated = (user.resumes || []).filter(r => r.id !== resumeId);
     AuthService.updateCurrentUser({ resumes: updated });
     return updated;
@@ -251,17 +263,61 @@ export class ArgusDataService {
   // Preferences
   public static getPreferences(): UserPreferences {
     const user = this.getCurrentUser();
-    return user.preferences;
+    return user?.preferences || {
+      target_company_ids: [],
+      preferred_roles: [],
+      focus_areas: [],
+      locations: [],
+      email_notifications_enabled: true,
+      notification_email: ''
+    };
   }
 
   public static savePreferences(pref: UserPreferences): UserPreferences {
+    const user = this.getCurrentUser();
+    if (!user) return pref;
     AuthService.updateCurrentUser({ preferences: pref });
+    
+    // Sync with backend PostgreSQL database asynchronously
+    try {
+      fetch('/api/auth/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          role_level: pref.role_level || 'all',
+          locations: pref.locations || [],
+          preferred_roles: pref.preferred_roles || [],
+          focus_areas: pref.focus_areas || [],
+          target_company_ids: pref.target_company_ids || [],
+          email_notifications_enabled: pref.email_notifications_enabled,
+          notification_email: pref.notification_email || user.email,
+        })
+      }).catch(err => console.debug('Backend preferences sync failed (fallback to local):', err));
+    } catch (e) {
+      console.debug('Failed to initiate preferences sync:', e);
+    }
+
     return pref;
   }
 
   // Profile Completion Percentage & Checklist
   public static getProfileCompletion(): { percentage: number; checklist: { name: string; completed: boolean; link: string }[]; missing: string[] } {
     const user = this.getCurrentUser();
+    if (!user) {
+      return {
+        percentage: 0,
+        checklist: [
+          { name: 'Basic Info & Headline', completed: false, link: 'profile_overview' },
+          { name: 'Portfolio Projects (min. 2)', completed: false, link: 'profile_projects' },
+          { name: 'Work Experience', completed: false, link: 'profile_experience' },
+          { name: 'Core Skills Inventory (min. 5)', completed: false, link: 'profile_skills' },
+          { name: 'Education & Degree', completed: false, link: 'profile_education' },
+          { name: 'Resume Uploaded', completed: false, link: 'profile_resumes' }
+        ],
+        missing: ['Basic Info & Headline', 'Portfolio Projects (min. 2)', 'Work Experience', 'Core Skills Inventory (min. 5)', 'Education & Degree', 'Resume Uploaded']
+      };
+    }
     const checklist = [
       { name: 'Basic Info & Headline', completed: !!(user.full_name && user.headline && user.location), link: 'profile_overview' },
       { name: 'Portfolio Projects (min. 2)', completed: (user.projects?.length || 0) >= 2, link: 'profile_projects' },
@@ -282,7 +338,7 @@ export class ArgusDataService {
   public static getCompanies(): Company[] {
     const user = this.getCurrentUser();
     const stored = this.load<Company[]>(STORAGE_KEYS.COMPANIES, []);
-    const targetIds = new Set(user.preferences?.target_company_ids || []);
+    const targetIds = new Set(user?.preferences?.target_company_ids || []);
     const postings = this.getPostings();
 
     return stored.map(c => {
@@ -299,6 +355,7 @@ export class ArgusDataService {
 
   public static toggleCompany(companyId: number, enabled: boolean): Company[] {
     const user = this.getCurrentUser();
+    if (!user) return this.getCompanies();
     const currentTargets = new Set(user.preferences?.target_company_ids || []);
     if (enabled) {
       currentTargets.add(companyId);
@@ -345,7 +402,7 @@ export class ArgusDataService {
   }
 
   public static getMatchForPosting(posting: Posting, forceRecalculate = false): MatchResult {
-    const user = this.getCurrentUser();
+    const user = this.getCurrentUser() || AuthService.createEmptyUser();
     const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
     const userMatches = this.load<Record<number, MatchResult>>(key, {});
 
@@ -361,13 +418,14 @@ export class ArgusDataService {
 
   public static getCachedMatchForPosting(postingId: number): MatchResult | null {
     const user = this.getCurrentUser();
+    if (!user) return null;
     const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
     const userMatches = this.load<Record<number, MatchResult>>(key, {});
     return userMatches[postingId] || null;
   }
 
   public static async getMatchForPostingAsync(posting: Posting, forceRecalculate = false): Promise<MatchResult> {
-    const user = this.getCurrentUser();
+    const user = this.getCurrentUser() || AuthService.createEmptyUser();
     const key = `${STORAGE_KEYS.MATCHES_PREFIX}${user.id}`;
     const userMatches = this.load<Record<number, MatchResult>>(key, {});
 
@@ -425,6 +483,7 @@ export class ArgusDataService {
 
   public static getApplications(): Application[] {
     const user = this.getCurrentUser();
+    if (!user) return [];
     const key = `${STORAGE_KEYS.APPLICATIONS_PREFIX}${user.id}`;
     const appsMap = this.load<Record<number, Application>>(key, {});
     const postings = this.getPostings();
@@ -440,6 +499,7 @@ export class ArgusDataService {
 
   public static getApplication(postingId: number): Application | null {
     const user = this.getCurrentUser();
+    if (!user) return null;
     const key = `${STORAGE_KEYS.APPLICATIONS_PREFIX}${user.id}`;
     const appsMap = this.load<Record<number, Application>>(key, {});
     const app = appsMap[postingId];
@@ -450,6 +510,7 @@ export class ArgusDataService {
 
   public static saveApplication(app: Application): Application {
     const user = this.getCurrentUser();
+    if (!user) return app;
     const key = `${STORAGE_KEYS.APPLICATIONS_PREFIX}${user.id}`;
     const appsMap = this.load<Record<number, Application>>(key, {});
 
@@ -494,6 +555,7 @@ export class ArgusDataService {
 
   public static deleteApplication(postingId: number): void {
     const user = this.getCurrentUser();
+    if (!user) return;
     const key = `${STORAGE_KEYS.APPLICATIONS_PREFIX}${user.id}`;
     const appsMap = this.load<Record<number, Application>>(key, {});
     delete appsMap[postingId];
@@ -527,7 +589,7 @@ export class ArgusDataService {
 
     const user = this.getCurrentUser();
     const communityItems: MergedExperienceItem[] = allExp
-      .filter(e => e.company_id === companyId && (e.visibility === 'shared' || e.author_user_id === user.id))
+      .filter(e => e.company_id === companyId && (e.visibility === 'shared' || (user && e.author_user_id === user.id)))
       .filter(e => (!stage || stage === 'all' || e.stage === stage))
       .map(e => ({
         id: e.id || Date.now(),
@@ -536,7 +598,7 @@ export class ArgusDataService {
         technical_questions: e.technical_questions,
         takeaways: e.takeaways,
         offer_details: e.offer_details,
-        author: e.author_display_mode === 'anonymous' ? 'Anonymous' : (user.full_name || 'Argus Candidate'),
+        author: e.author_display_mode === 'anonymous' ? 'Anonymous' : (user?.full_name || 'Argus Candidate'),
         verified_applicant: e.verified_applicant,
         url: null,
         created_at: e.created_at || new Date().toISOString(),
@@ -569,6 +631,9 @@ export class ArgusDataService {
 
   public static async saveExperienceLog(log: Partial<ExperienceLog>): Promise<ExperienceLog> {
     const user = this.getCurrentUser();
+    if (!user) {
+      throw new Error('No user currently logged in.');
+    }
     const allExp = this.load<ExperienceLog[]>(STORAGE_KEYS.EXPERIENCES, []);
     
     // Check confidentiality acknowledgment

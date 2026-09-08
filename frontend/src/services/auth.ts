@@ -1,4 +1,4 @@
-import { UserProfile } from '../types';
+import { UserProfile, UserPreferences } from '../types';
 
 const STORAGE_KEYS = {
   VERIFIED_USERS: 'argus_verified_users_v4',
@@ -73,17 +73,11 @@ export class AuthService {
     }
   }
 
-  public static getCurrentUser(): UserProfile {
+  public static getCurrentUser(): UserProfile | null {
     const currentId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+    if (!currentId) return null;
     const users = this.getVerifiedUsers();
-    if (currentId) {
-      const found = users.find(u => u.id === currentId);
-      if (found) return found;
-    }
-    if (users.length > 0) {
-      return users[0];
-    }
-    return this.createEmptyUser();
+    return users.find(u => u.id === currentId) || null;
   }
 
   public static switchUser(userId: string): UserProfile {
@@ -98,9 +92,7 @@ export class AuthService {
   }
 
   public static isAuthenticated(): boolean {
-    const currentId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-    if (!currentId) return false;
-    return this.getVerifiedUsers().some(u => u.id === currentId);
+    return this.getCurrentUser() !== null;
   }
 
   public static resetAllUsers(): void {
@@ -112,7 +104,11 @@ export class AuthService {
   /**
    * Sends an OTP verification code to the candidate's genuine email address.
    */
-  public static async sendOtp(email: string, fullName: string): Promise<{ success: boolean; message: string; devOtp?: string }> {
+  public static async sendOtp(
+    email: string, 
+    fullName: string,
+    preferences?: Partial<UserPreferences>
+  ): Promise<{ success: boolean; message: string; devOtp?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = fullName.trim() || 'Candidate';
 
@@ -151,6 +147,7 @@ export class AuthService {
       localStorage.setItem(STORAGE_KEYS.PENDING_REGISTRATION, JSON.stringify({
         email: cleanEmail,
         fullName: cleanName,
+        preferences: preferences || null,
         sentAt: Date.now(),
         devOtp: data.dev_otp
       }));
@@ -167,6 +164,7 @@ export class AuthService {
       localStorage.setItem(STORAGE_KEYS.PENDING_REGISTRATION, JSON.stringify({
         email: cleanEmail,
         fullName: cleanName,
+        preferences: preferences || null,
         otp: fallbackOtp,
         sentAt: Date.now()
       }));
@@ -183,9 +181,42 @@ export class AuthService {
    * Verifies the 6-digit OTP code and inserts the verified user into the database.
    * Does NOT auto-login, per requirement: displays login screen so user signs in with verified credentials.
    */
-  public static async verifyOtpAndRegister(email: string, otpCode: string): Promise<{ success: boolean; message: string; user: UserProfile }> {
+  public static async verifyOtpAndRegister(
+    email: string, 
+    otpCode: string,
+    preferencesOverride?: Partial<UserPreferences>
+  ): Promise<{ success: boolean; message: string; user: UserProfile }> {
     const cleanEmail = email.trim().toLowerCase();
     const cleanOtp = otpCode.trim();
+
+    const pendingRaw = localStorage.getItem(STORAGE_KEYS.PENDING_REGISTRATION);
+    let pendingPrefs: Partial<UserPreferences> = preferencesOverride || {};
+    let pendingName = '';
+    if (pendingRaw) {
+      try {
+        const p = JSON.parse(pendingRaw);
+        if (p.fullName) pendingName = p.fullName;
+        if (p.preferences) {
+          pendingPrefs = { ...p.preferences, ...pendingPrefs };
+        }
+      } catch {}
+    }
+
+    const initialPrefs: UserPreferences = {
+      target_company_ids: pendingPrefs.target_company_ids || [1, 2, 3, 4, 9, 10, 11, 13, 17, 18],
+      preferred_roles: pendingPrefs.preferred_roles && pendingPrefs.preferred_roles.length > 0
+        ? pendingPrefs.preferred_roles
+        : ['Software Engineer Intern', 'Software Engineer New Grad', 'Backend Engineer'],
+      focus_areas: pendingPrefs.focus_areas && pendingPrefs.focus_areas.length > 0
+        ? pendingPrefs.focus_areas
+        : ['Backend', 'Infrastructure', 'Distributed Systems'],
+      locations: pendingPrefs.locations && pendingPrefs.locations.length > 0
+        ? pendingPrefs.locations
+        : ['India', 'Remote / Anywhere', 'United States'],
+      role_level: pendingPrefs.role_level || 'all',
+      email_notifications_enabled: pendingPrefs.email_notifications_enabled ?? true,
+      notification_email: pendingPrefs.notification_email || cleanEmail
+    };
 
     let verifiedUser: UserProfile | null = null;
 
@@ -204,32 +235,24 @@ export class AuthService {
       // Server verified and inserted into DB
       const dbUser = data.user;
       verifiedUser = {
-        id: `user-${dbUser.id || Date.now()}`,
-        email: dbUser.email || cleanEmail,
-        full_name: dbUser.name || cleanEmail.split('@')[0],
-        headline: '',
+        id: `user-${dbUser?.id || Date.now()}`,
+        email: dbUser?.email || cleanEmail,
+        full_name: dbUser?.name || pendingName || cleanEmail.split('@')[0],
+        headline: initialPrefs.preferred_roles[0] || 'Software Engineer',
         current_status: 'student',
-        location: '',
+        location: initialPrefs.locations[0] || 'India',
         projects: [],
         experiences: [],
         skills: [],
         education: [],
         achievements: [],
         resumes: [],
-        preferences: {
-          target_company_ids: [],
-          preferred_roles: [],
-          focus_areas: [],
-          locations: [],
-          email_notifications_enabled: true,
-          notification_email: cleanEmail
-        },
+        preferences: initialPrefs,
         onboarding_completed: false,
         created_at: new Date().toISOString()
       };
     } catch (err: any) {
       // Local fallback verification if backend API is not running
-      const pendingRaw = localStorage.getItem(STORAGE_KEYS.PENDING_REGISTRATION);
       if (pendingRaw) {
         const pending = JSON.parse(pendingRaw);
         if (pending.email === cleanEmail && (pending.otp === cleanOtp || pending.devOtp === cleanOtp)) {
@@ -237,23 +260,16 @@ export class AuthService {
             id: `user-${Date.now()}`,
             email: cleanEmail,
             full_name: pending.fullName || cleanEmail.split('@')[0],
-            headline: '',
+            headline: initialPrefs.preferred_roles[0] || 'Software Engineer',
             current_status: 'student',
-            location: '',
+            location: initialPrefs.locations[0] || 'India',
             projects: [],
             experiences: [],
             skills: [],
             education: [],
             achievements: [],
             resumes: [],
-            preferences: {
-              target_company_ids: [],
-              preferred_roles: [],
-              focus_areas: [],
-              locations: [],
-              email_notifications_enabled: true,
-              notification_email: cleanEmail
-            },
+            preferences: initialPrefs,
             onboarding_completed: false,
             created_at: new Date().toISOString()
           };
@@ -263,6 +279,26 @@ export class AuthService {
       if (!verifiedUser) {
         throw new Error(err.message || 'Invalid verification code. Please check and try again.');
       }
+    }
+
+    // Sync preferences to backend DB asynchronously
+    try {
+      fetch(`${API_BASE_URL}/auth/preferences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          role_level: initialPrefs.role_level,
+          locations: initialPrefs.locations,
+          preferred_roles: initialPrefs.preferred_roles,
+          focus_areas: initialPrefs.focus_areas,
+          target_company_ids: initialPrefs.target_company_ids,
+          email_notifications_enabled: initialPrefs.email_notifications_enabled,
+          notification_email: cleanEmail
+        })
+      }).catch(err => console.debug('Initial preferences sync warning:', err));
+    } catch (e) {
+      console.debug('Failed preferences dispatch:', e);
     }
 
     // Save to verified users storage

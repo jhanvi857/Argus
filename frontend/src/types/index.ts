@@ -172,6 +172,7 @@ export interface UserPreferences {
   preferred_roles: string[];
   focus_areas: string[];
   locations: string[];
+  role_level?: 'all' | 'intern' | 'new_grad' | 'experienced';
   email_notifications_enabled: boolean;
   notification_email?: string;
 }
@@ -181,7 +182,7 @@ export interface UserProfile {
   email: string;
   full_name: string;
   headline: string;
-  current_status: 'student' | 'intern' | 'new_grad' | 'swe' | 'other';
+  current_status: 'student' | 'intern' | 'new_grad' | 'swe' | 'experienced' | 'other';
   location: string;
   target_location?: string;
   bio?: string;
