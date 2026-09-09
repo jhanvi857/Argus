@@ -44,7 +44,16 @@ export const AppShell: React.FC<AppShellProps> = ({
 }) => {
   const [telemetryOpen, setTelemetryOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleToggleSidebar = () => {
+    if (window.innerWidth <= 768) {
+      setMobileMenuOpen(prev => !prev);
+    } else {
+      setSidebarOpen(prev => !prev);
+    }
+  };
 
   return (
     <div className="argus-app-shell">
@@ -63,7 +72,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       )}
 
       {/* Main Sidebar */}
-      <div className={`argus-sidebar ${mobileMenuOpen ? 'is-mobile-open' : ''}`}>
+      <div className={`argus-sidebar ${!sidebarOpen ? 'is-collapsed' : ''} ${mobileMenuOpen ? 'is-mobile-open' : ''}`}>
         <Sidebar
           currentRoute={currentRoute}
           onNavigate={(route) => {
@@ -99,7 +108,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           unreadAlertsCount={newPostingsCount}
           profileCompletion={profileCompletion}
           onNavigate={onNavigate}
-          onToggleMobileMenu={() => setMobileMenuOpen(!mobileMenuOpen)}
+          onToggleMobileMenu={handleToggleSidebar}
         />
 
         <div className="argus-page-scrollable">

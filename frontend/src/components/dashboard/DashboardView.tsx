@@ -205,7 +205,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               color: activeRoleLevel === 'intern' ? '#1d4ed8' : activeRoleLevel === 'new_grad' ? '#047857' : activeRoleLevel === 'experienced' ? '#b45309' : 'var(--gray-800)',
               border: '1px solid currentColor'
             }}>
-              {activeRoleLevel === 'intern' ? '🎓 Internships Only' : activeRoleLevel === 'new_grad' ? '🚀 New Grad Only' : activeRoleLevel === 'experienced' ? '💼 Experienced / Industry' : 'All Levels'}
+              {activeRoleLevel === 'intern' ? 'Internships Only' : activeRoleLevel === 'new_grad' ? 'New Grad Only' : activeRoleLevel === 'experienced' ? 'Experienced / Industry' : 'All Levels'}
             </span>
             <span style={{ fontSize: '12px', color: 'var(--gray-400)' }}>•</span>
             <span style={{ fontSize: '12px', color: 'var(--gray-700)', display: 'flex', alignItems: 'center', gap: '4px' }}>

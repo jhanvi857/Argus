@@ -30,13 +30,13 @@ export const Topbar: React.FC<TopbarProps> = ({
 }) => {
   return (
     <header className="argus-topbar">
-      {/* Left: Mobile menu toggle (visible on mobile only) */}
+      {/* Left: Sidebar toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
           onClick={onToggleMobileMenu}
           className="btn-ghost btn-sm"
-          style={{ display: 'inline-flex', padding: '6px' }}
-          title="Toggle Mobile Menu"
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px', cursor: 'pointer', borderRadius: '6px' }}
+          title="Toggle Sidebar"
         >
           <Menu size={18} />
         </button>

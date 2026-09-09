@@ -102,13 +102,16 @@
 }
 
 /* Reset & Core Setup */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   background-color: var(--bg-white);
@@ -132,19 +135,27 @@ html, body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--gray-300);
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--gray-400);
 }
 
 /* Typography Helpers */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-heading);
   color: var(--gray-900);
   font-weight: 700;
@@ -178,7 +189,17 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   flex-shrink: 0;
   z-index: 40;
-  transition: transform 0.2s ease;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+.argus-sidebar.is-collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  border-right: none !important;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .argus-sidebar-brand {
@@ -271,7 +292,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sidebar-nav-item.active .nav-badge {
-  background-color: rgba(255,255,255,0.25);
+  background-color: rgba(255, 255, 255, 0.25);
   color: white;
 }
 
@@ -468,6 +489,7 @@ button,
   border-color: var(--primary);
   border-radius: var(--border-radius-sm);
 }
+
 .btn-primary:hover {
   background-color: var(--primary-dark);
   border-color: var(--primary-dark);
@@ -480,6 +502,7 @@ button,
   color: var(--bg-white);
   border-color: var(--primary);
 }
+
 .btn-accent:hover {
   background-color: var(--primary-dark);
   border-color: var(--primary-dark);
@@ -491,6 +514,7 @@ button,
   color: var(--gray-800);
   border-color: var(--gray-300);
 }
+
 .btn-secondary:hover {
   background-color: var(--gray-50);
   border-color: var(--gray-400);
@@ -501,6 +525,7 @@ button,
   color: var(--gray-900);
   border-color: var(--bg-cream-border);
 }
+
 .btn-cream:hover {
   background-color: var(--bg-cream-dark);
 }
@@ -510,6 +535,7 @@ button,
   color: var(--gray-700);
   border-color: transparent;
 }
+
 .btn-ghost:hover {
   background-color: var(--gray-100);
   color: var(--primary);
@@ -522,6 +548,7 @@ button,
   border-radius: var(--border-radius-sm);
   font-weight: 600;
 }
+
 .btn-outline-primary:hover {
   background-color: var(--primary);
   color: white;
@@ -571,7 +598,8 @@ button,
   border: 1px solid var(--gray-200);
 }
 
-.badge-tag-navy, .badge-tag-theme {
+.badge-tag-navy,
+.badge-tag-theme {
   background-color: var(--primary-tint);
   color: var(--primary);
   border-color: var(--bg-cream-border);
@@ -848,14 +876,45 @@ button,
   font-size: 13px;
 }
 
-.company-logo-google { background: #e8f0fe; color: #4285f4; }
-.company-logo-stripe { background: #f3ecfe; color: #635bff; }
-.company-logo-amazon { background: #fff3e0; color: #ff9900; }
-.company-logo-microsoft { background: #e8f5e9; color: #00a651; }
-.company-logo-goldman { background: #e3f2fd; color: #1565c0; }
-.company-logo-jpmorgan { background: #e3f2fd; color: #0d47a1; }
-.company-logo-citadel { background: #f3f3f3; color: #333; }
-.company-logo-default { background: var(--gray-100); color: var(--gray-600); }
+.company-logo-google {
+  background: #e8f0fe;
+  color: #4285f4;
+}
+
+.company-logo-stripe {
+  background: #f3ecfe;
+  color: #635bff;
+}
+
+.company-logo-amazon {
+  background: #fff3e0;
+  color: #ff9900;
+}
+
+.company-logo-microsoft {
+  background: #e8f5e9;
+  color: #00a651;
+}
+
+.company-logo-goldman {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.company-logo-jpmorgan {
+  background: #e3f2fd;
+  color: #0d47a1;
+}
+
+.company-logo-citadel {
+  background: #f3f3f3;
+  color: #333;
+}
+
+.company-logo-default {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
 
 /* ==========================================================================
    MODALS & OVERLAYS
@@ -928,7 +987,9 @@ button,
   color: var(--gray-700);
 }
 
-.form-input, .form-textarea, .form-select {
+.form-input,
+.form-textarea,
+.form-select {
   font-family: var(--font-sans);
   font-size: 14px;
   padding: 10px 14px;
@@ -940,7 +1001,9 @@ button,
   transition: all 0.15s ease;
 }
 
-.form-input:focus, .form-textarea:focus, .form-select:focus {
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-tint);
 }
@@ -1023,7 +1086,8 @@ button,
 }
 
 /* Pulse dots */
-.pulsing-dot-crimson, .pulsing-dot-theme {
+.pulsing-dot-crimson,
+.pulsing-dot-theme {
   width: 8px;
   height: 8px;
   background-color: var(--primary);
@@ -1696,29 +1760,61 @@ button,
    ========================================================================== */
 
 @keyframes pulseTheme {
-  0% { box-shadow: 0 0 0 0 var(--primary-glow); }
-  70% { box-shadow: 0 0 0 6px rgba(173, 40, 49, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(173, 40, 49, 0); }
+  0% {
+    box-shadow: 0 0 0 0 var(--primary-glow);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px rgba(173, 40, 49, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(173, 40, 49, 0);
+  }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleUp {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes floatUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .animate-spin {
@@ -1737,20 +1833,25 @@ button,
     bottom: 0;
     transform: translateX(-100%);
   }
+
   .argus-sidebar.is-mobile-open {
     transform: translateX(0);
   }
+
   .argus-page-scrollable {
     padding: 20px 16px;
   }
+
   .landing-hero-section {
     grid-template-columns: 1fr;
     padding: 40px 24px;
   }
+
   .landing-feature-cards {
     grid-template-columns: 1fr;
     padding: 0 24px;
   }
+
   .opportunity-detail-grid {
     grid-template-columns: 1fr;
   }

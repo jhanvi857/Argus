@@ -273,27 +273,63 @@ export class ArgusDataService {
     };
   }
 
-  public static savePreferences(pref: UserPreferences): UserPreferences {
+  public static async syncRemotePreferences(): Promise<UserPreferences | null> {
+    const user = this.getCurrentUser();
+    if (!user) return null;
+    try {
+      const res = await fetch(`/api/auth/preferences?email=${encodeURIComponent(user.email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          const merged: UserPreferences = {
+            ...user.preferences,
+            ...data
+          };
+          AuthService.updateCurrentUser({ preferences: merged });
+          return merged;
+        }
+      }
+    } catch (err) {
+      console.debug('Failed to sync remote preferences from backend:', err);
+    }
+    return user.preferences || null;
+  }
+
+  public static async savePreferences(pref: UserPreferences): Promise<UserPreferences> {
     const user = this.getCurrentUser();
     if (!user) return pref;
     AuthService.updateCurrentUser({ preferences: pref });
     
-    // Sync with backend PostgreSQL database asynchronously
+    // Sync with backend PostgreSQL database
     try {
-      fetch('/api/auth/preferences', {
+      const response = await fetch('/api/auth/preferences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: user.email,
           role_level: pref.role_level || 'all',
+          candidate_stage: pref.candidate_stage || 'College Student',
+          candidate_stage_detail: pref.candidate_stage_detail || 'Seeking internships & co-ops',
+          target_roles: pref.target_roles || ['Internships', 'New Grad'],
           locations: pref.locations || [],
           preferred_roles: pref.preferred_roles || [],
           focus_areas: pref.focus_areas || [],
           target_company_ids: pref.target_company_ids || [],
           email_notifications_enabled: pref.email_notifications_enabled,
           notification_email: pref.notification_email || user.email,
+          minimum_relevance: pref.minimum_relevance ?? 80,
+          posting_freshness_days: pref.posting_freshness_days ?? 7,
+          delivery_frequency: pref.delivery_frequency || 'Instant',
+          last_updated_at: pref.last_updated_at || new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', ' ·'),
         })
-      }).catch(err => console.debug('Backend preferences sync failed (fallback to local):', err));
+      });
+      if (response.ok) {
+        const saved = await response.json();
+        if (saved && saved.preferences) {
+          AuthService.updateCurrentUser({ preferences: saved.preferences });
+          return saved.preferences;
+        }
+      }
     } catch (e) {
       console.debug('Failed to initiate preferences sync:', e);
     }

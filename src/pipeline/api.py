@@ -441,12 +441,19 @@ def api_list_users():
 class PreferencesUpdateRequest(BaseModel):
     email: Optional[str] = None
     role_level: Optional[str] = "all"
+    candidate_stage: Optional[str] = "College Student"
+    candidate_stage_detail: Optional[str] = "Seeking internships & co-ops"
+    target_roles: Optional[List[str]] = None
     locations: Optional[List[str]] = None
     preferred_roles: Optional[List[str]] = None
     focus_areas: Optional[List[str]] = None
     target_company_ids: Optional[List[int]] = None
     email_notifications_enabled: Optional[bool] = True
     notification_email: Optional[str] = None
+    minimum_relevance: Optional[int] = 80
+    posting_freshness_days: Optional[int] = 7
+    delivery_frequency: Optional[str] = "Instant"
+    last_updated_at: Optional[str] = None
 
 
 @app.get("/auth/preferences")
@@ -466,12 +473,19 @@ def api_save_preferences(req: PreferencesUpdateRequest):
     db = DatabaseManager()
     pref_dict = {
         "role_level": req.role_level or "all",
+        "candidate_stage": req.candidate_stage or "College Student",
+        "candidate_stage_detail": req.candidate_stage_detail or "Seeking internships & co-ops",
+        "target_roles": req.target_roles or ["Internships", "New Grad"],
         "locations": req.locations or [],
         "preferred_roles": req.preferred_roles or [],
         "focus_areas": req.focus_areas or [],
         "target_company_ids": req.target_company_ids or [],
         "email_notifications_enabled": req.email_notifications_enabled if req.email_notifications_enabled is not None else True,
         "notification_email": req.notification_email or req.email,
+        "minimum_relevance": req.minimum_relevance if req.minimum_relevance is not None else 80,
+        "posting_freshness_days": req.posting_freshness_days if req.posting_freshness_days is not None else 7,
+        "delivery_frequency": req.delivery_frequency or "Instant",
+        "last_updated_at": req.last_updated_at or datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M"),
     }
     user_identifier = req.email or (req.notification_email if req.notification_email else "active")
     if user_identifier != "active":
