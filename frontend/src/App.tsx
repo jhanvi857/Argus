@@ -309,6 +309,7 @@ export const App: React.FC = () => {
           profileCompletion={profileCompletion}
           onNavigate={handleNavigate}
           onEditProfileModal={() => handleNavigate('settings')}
+          onRefresh={refreshData}
         />
       )}
 
