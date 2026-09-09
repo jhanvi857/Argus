@@ -802,7 +802,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                       { id: 'applied', label: 'Applied' },
                       { id: 'oa', label: 'OA Assessment' },
                       { id: 'interview', label: 'Interview' },
-                      { id: 'offer', label: 'Offer 🎉' },
+                      { id: 'offer', label: 'Offer' },
                       { id: 'rejected', label: 'Rejected' }
                     ].map(s => {
                       const isSelected = appStage === s.id;
@@ -861,7 +861,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                 {appStage === 'offer' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
                     <label className="form-label" style={{ color: '#15803d', fontWeight: 700, fontSize: '12.5px', margin: 0 }}>
-                      🎉 Offer Details & Compensation
+                      Offer Details & Compensation
                     </label>
                     <input
                       type="text"

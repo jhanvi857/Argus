@@ -252,14 +252,23 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, style, clas
     }
 
     // Checkbox / Task items (e.g. [x] Code Quality:)
-    if (line.startsWith('[x] ') || line.startsWith('[ ] ') || line.startsWith('☑ ') || line.startsWith('✅ ')) {
+    if (line.startsWith('[x] ') || line.startsWith('[ ] ')) {
       flushList();
       const isChecked = !line.startsWith('[ ] ');
-      const cleanText = line.replace(/^(\[[x ]\]|☑|✅)\s*/, '');
+      const cleanText = line.replace(/^(\[[x ]\])\s*/, '');
       elements.push(
         <div key={`task-${elements.length}`} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', margin: '4px 0', fontSize: '12.5px', color: 'var(--gray-800)' }}>
-          <span style={{ color: isChecked ? '#16a34a' : 'var(--gray-400)', fontWeight: 700, marginTop: '1px' }}>
-            {isChecked ? '✅' : '⬜'}
+          <span style={{ color: isChecked ? '#16a34a' : 'var(--gray-400)', display: 'inline-flex', alignItems: 'center', marginTop: '2px' }}>
+            {isChecked ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" fill="#dcfce7" stroke="#16a34a" />
+                <path d="m9 12 2 2 4-4" stroke="#16a34a" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" stroke="#9ca3af" />
+              </svg>
+            )}
           </span>
           <div style={{ flex: 1, lineHeight: 1.5 }}>{renderInline(cleanText)}</div>
         </div>
