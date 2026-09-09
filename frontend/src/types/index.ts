@@ -173,8 +173,15 @@ export interface UserPreferences {
   focus_areas: string[];
   locations: string[];
   role_level?: 'all' | 'intern' | 'new_grad' | 'experienced';
+  target_roles?: string[];
+  candidate_stage?: string;
+  candidate_stage_detail?: string;
   email_notifications_enabled: boolean;
   notification_email?: string;
+  minimum_relevance?: number;
+  posting_freshness_days?: number;
+  delivery_frequency?: string;
+  last_updated_at?: string;
 }
 
 export interface UserProfile {
