@@ -8,17 +8,18 @@ Aggregator portals (such as LinkedIn or Indeed) often surface stale, duplicate, 
 
 ## Table of Contents
 
-1. System Architecture
-2. n8n Orchestration Pipeline
-3. Core Architectural Decisions (ADRs)
-4. Data Pipeline and LangGraph Workflows
-5. Database Schema
-6. Target Company Directory
-7. Model Context Protocol (MCP) Server
-8. Community & Curated Prep Intelligence
-9. Setup and Deployment
-10. Test Suite Verification
-11. License
+- [1. System Architecture](#1-system-architecture)
+- [2. n8n Orchestration Pipeline](#2-n8n-orchestration-pipeline)
+- [3. Core Architectural Decisions (ADRs)](#3-core-architectural-decisions-adrs)
+- [4. Data Pipeline and LangGraph Workflows](#4-data-pipeline-and-langgraph-workflows)
+- [5. Database Schema & User Preferences](#5-database-schema--user-preferences)
+- [6. Target Company Directory](#6-target-company-directory)
+- [7. Model Context Protocol (MCP) Server](#7-model-context-protocol-mcp-server)
+- [8. Community & Curated Prep Intelligence](#8-community--curated-prep-intelligence)
+- [9. Monitoring Preferences & Differential Filtering](#9-monitoring-preferences--differential-filtering)
+- [10. Setup and Deployment](#10-setup-and-deployment)
+- [11. Test Suite Verification](#11-test-suite-verification)
+- [12. License](#12-license)
 
 ---
 
@@ -205,7 +206,7 @@ stateDiagram-v2
 
 ---
 
-## 5. Database Schema
+## 5. Database Schema & User Preferences
 
 The database schema is defined in `db/schema.sql` and initialized automatically on startup:
 
@@ -321,10 +322,26 @@ erDiagram
         varchar email UK
         varchar name
         boolean is_verified
+        boolean is_active
+        jsonb preferences
         timestamp created_at
         timestamp updated_at
     }
 ```
+
+### User Preferences Schema (`users.preferences`)
+Candidate search filters and notification settings are stored as structured JSONB in `users.preferences`:
+- `candidate_stage`: Current career status (e.g. `College Student`, `Recent Graduate`, `Early Career`).
+- `candidate_stage_detail`: Focus description (e.g. `Seeking internships & co-ops`).
+- `target_roles`: Monitored role types (e.g. `["Internships", "New Grad"]`).
+- `role_level`: Normalized level filter (`all`, `intern`, `new_grad`, `experienced`).
+- `locations`: Monitored countries list (e.g. `["India", "United States", "Canada", "United Kingdom"]`).
+- `target_company_ids`: Whitelist of monitored employer IDs mapped to official ATS platforms.
+- `email_notifications_enabled`: Notification dispatch toggle (`true` / `false`).
+- `minimum_relevance`: Relevance cutoff score (e.g. `80%`).
+- `posting_freshness_days`: Freshness window for new opportunities (e.g. `7` days).
+- `delivery_frequency`: Delivery cadence (`Instant` per posting or `Daily Digest`).
+- `last_updated_at`: Timestamp of last preference synchronization.
 
 ---
 
@@ -411,16 +428,61 @@ Argus unifies internal candidate interview logs with curated external debriefs i
 
 ---
 
-## 9. Setup and Deployment
+## 9. Monitoring Preferences & Differential Filtering
 
-### 9.1 Prerequisites
+Argus features a dedicated monitoring profile interface to configure differential ATS ingestion filters, target role thresholds, and notification delivery options with zero dummy data or placeholders.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                              PREFERENCES                               │
+│      Configure how Argus searches, filters, and alerts you.            │
+├────────────────────────────────────────────────────────────────────────┤
+│ [User] Profile: College Student · Seeking internships & co-ops         │
+│ [Briefcase] Target Roles: [v Internships] [v New Grad] [ Experienced]  │
+│ [Globe] Geography: 12 countries selected [India x] [US x] [Canada x]   │
+│ [Building] Watchlist: 24 companies [Google x] [Microsoft x] [+20 more] │
+│ [Mail] Email Alerts: Enabled · 80% Min Relevance · 7 Days Freshness    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.1 Configuration Capabilities
+1. **Profile**: Candidate career stage and goals (`College Student`, `Recent Graduate`, `Early Career`, `Experienced`).
+2. **Target Roles**: Multi-select pills (`Internships`, `New Grad`, `Experienced`) enforcing strict filtering so non-matching levels are excluded from notifications.
+3. **Geography**: Monitored country watchlist with individual tag removal (`India`, `United States`, `Canada`, `United Kingdom`, `+N more`) and searchable directory.
+4. **Company Watchlist**: Tracked enterprise employers mapped to verified ATS endpoints with brand monogram badges and interactive search selector across all database companies.
+5. **Email Alerts**: Toggle notifications, select relevance cutoff (e.g. 70%, 75%, 80%, 85%, 90%), posting freshness window (1 to 30 days), and delivery timing (`Instant` / `Daily Digest`).
+
+### 9.2 Monitoring Flow Pipeline
+```
+[1. Apply Profile Filters]
+    --> Career stage, roles, geography
+[2. Match with Job Postings]
+    --> Partnered platforms & reverse-engineered official ATS endpoints
+[3. Apply Differential Filters]
+    --> Target company watchlist, minimum relevance threshold (> 80%)
+[4. Trigger Alerts]
+    --> New verified opportunity match identified
+[5. Deliver via Email]
+    --> Instant dispatch or scheduled digest via SMTP
+```
+
+### 9.3 Backend Persistence & State Management
+- Unsaved changes trigger a floating bottom action bar with `Cancel` (revert) and `Save Preferences` (commit).
+- Saves directly to the PostgreSQL `users.preferences` JSONB column via `POST /auth/preferences`.
+- Automatically synchronized across ingestion cycles and application startup via `GET /auth/preferences`.
+
+---
+
+## 10. Setup and Deployment
+
+### 10.1 Prerequisites
 
 - Python 3.11 or higher
 - Node.js 20 or higher
 - Docker and Docker Compose
 - PostgreSQL 16 (if running standalone without Docker)
 
-### 9.2 Environment Configuration
+### 10.2 Environment Configuration
 
 Create a `.env` file in the root directory based on `.env.example`:
 
@@ -446,7 +508,7 @@ NOTIFICATION_EMAIL_TO=candidate@example.com
 NOTIFICATION_EMAIL_FROM=argus-alerts@example.com
 ```
 
-### 9.3 Running the Full Stack with Docker Compose
+### 10.3 Running the Full Stack with Docker Compose
 
 To boot PostgreSQL, the FastAPI backend, n8n, and the frontend web server simultaneously:
 
@@ -460,7 +522,7 @@ Access points:
 - n8n Automation Console: `http://localhost:5678`
 - PostgreSQL: `localhost:5432`
 
-### 9.4 Local Development Setup
+### 10.4 Local Development Setup
 
 If running components natively without Docker:
 
@@ -485,7 +547,7 @@ npm run dev
 
 ---
 
-## 10. Test Suite Verification
+## 11. Test Suite Verification
 
 The project includes an extensive test suite covering configuration loading, database adapters, the ingestion pipeline, LangGraph state machines, Phase 8 enterprise adapters, the MCP server, experience logs, and end-to-end integration:
 
@@ -507,12 +569,12 @@ npm run build
 ```
 Output:
 ```
-built in 5.43s with 0 TypeScript errors
+built in 6.58s with 0 TypeScript errors
 ```
 
 ---
 
-## 11. License
+## 12. License
 
 Argus is developed for automated career monitoring and job-to-project matching under the MIT License.
 
