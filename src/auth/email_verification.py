@@ -2,7 +2,7 @@
 
 Enforces genuine email ownership:
 1. Validates email syntax and filters out disposable / dummy domains.
-2. Dispatches a 6-digit cryptographic OTP to the user's email address via SMTP.
+2. Dispatches a 6-digit cryptographic OTP to the user's email address via Resend (or configured SMTP).
 3. Only AFTER successful OTP verification is the user persisted into the PostgreSQL `users` table.
 4. Prevents dummy/unverified emails from being registered, ensuring automated ATS notifications
    are only ever sent to verified candidate inboxes.
