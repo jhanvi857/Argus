@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { UserProfile, Posting, Application, AppRoute, PostingStatus, UserPreferences } from '../../types';
 import { ArgusDataService } from '../../services/api';
+import { GLOBAL_COUNTRIES } from '../../data/countries';
+import { isInternPosting, isNewGradPosting, isExperiencedPosting } from '../opportunities/OpportunitiesView';
 
 
 interface DashboardViewProps {
@@ -52,6 +54,71 @@ const getTimeAgo = (dateStr: string) => {
   return `${diffD}d ago`;
 };
 
+export const filterPostingByPreferences = (
+  p: Posting,
+  preferences?: UserPreferences,
+  activeRoleLevelOverride?: 'all' | 'intern' | 'new_grad' | 'experienced'
+): boolean => {
+  if (!p.relevant) return false;
+
+  // 1. Role level filter
+  const roleLevel = activeRoleLevelOverride || preferences?.role_level || 'all';
+  if (roleLevel === 'intern' && !isInternPosting(p)) return false;
+  if (roleLevel === 'new_grad' && !isNewGradPosting(p)) return false;
+  if (roleLevel === 'experienced' && !isExperiencedPosting(p)) return false;
+
+  // Target roles pills
+  const targetRoles = preferences?.target_roles;
+  if (targetRoles && targetRoles.length > 0 && roleLevel === 'all') {
+    const wantsIntern = targetRoles.includes('Internships');
+    const wantsNewGrad = targetRoles.includes('New Grad');
+    const wantsExp = targetRoles.includes('Experienced');
+    if (!(wantsIntern && wantsNewGrad && wantsExp)) {
+      const isInt = isInternPosting(p);
+      const isNG = isNewGradPosting(p);
+      const isExp = isExperiencedPosting(p);
+      const matched = (wantsIntern && isInt) || (wantsNewGrad && isNG) || (wantsExp && isExp);
+      if (!matched) return false;
+    }
+  }
+
+  // 2. Location filter
+  const targetLocations = preferences?.locations;
+  if (targetLocations && targetLocations.length > 0) {
+    const isAllLoc = targetLocations.some(l => ['all', 'all global locations', 'any'].includes(l.toLowerCase()));
+    if (!isAllLoc) {
+      const locStr = typeof p.location === 'string' ? p.location : (p.location as any)?.name || '';
+      const text = `${locStr} ${p.title || ''}`.toLowerCase();
+
+      const matchesAnyLocation = targetLocations.some(loc => {
+        const locLower = loc.toLowerCase().trim();
+        if (!locLower) return false;
+        if (text.includes(locLower)) return true;
+        const country = GLOBAL_COUNTRIES.find(c => c.name.toLowerCase() === locLower || c.id.toLowerCase() === locLower);
+        if (country && country.keywords) {
+          return country.keywords.some(k => {
+            if (k.length <= 3) return new RegExp(`\\b${k}\\b`, 'i').test(text);
+            return text.includes(k);
+          });
+        }
+        return false;
+      });
+
+      if (!matchesAnyLocation) return false;
+    }
+  }
+
+  // 3. Target company filter
+  const targetCompanyIds = preferences?.target_company_ids;
+  if (targetCompanyIds && targetCompanyIds.length > 0) {
+    if (!targetCompanyIds.includes(p.company_id)) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   currentUser,
   postings,
@@ -73,6 +140,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleQuickSwitchRoleLevel = (lvl: 'all' | 'intern' | 'new_grad' | 'experienced') => {
     setActiveRoleLevel(lvl);
+    let newTargetRoles = ['Internships', 'New Grad'];
+    if (lvl === 'intern') newTargetRoles = ['Internships'];
+    else if (lvl === 'new_grad') newTargetRoles = ['New Grad'];
+    else if (lvl === 'experienced') newTargetRoles = ['Experienced'];
+
     const currentPref: UserPreferences = currentUser.preferences || {
       target_company_ids: [],
       preferred_roles: [],
@@ -83,13 +155,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
     ArgusDataService.savePreferences({
       ...currentPref,
-      role_level: lvl
+      role_level: lvl,
+      target_roles: newTargetRoles
     });
   };
 
-  // Derived real data strictly from state without any fake mock numbers
-  const newRelevantPostings = postings.filter(p => p.status === 'new' && p.relevant);
-  const matchesCount = postings.filter(p => p.relevant && (p.status === 'reviewed' || p.status === 'applied')).length;
+  // Derived real data strictly from state filtered by active user preferences
+  const newRelevantPostings = postings.filter(p => p.status === 'new' && filterPostingByPreferences(p, currentUser.preferences, activeRoleLevel));
+  const matchesCount = postings.filter(p => (p.status === 'reviewed' || p.status === 'applied') && filterPostingByPreferences(p, currentUser.preferences, activeRoleLevel)).length;
   const activeApplications = applications.filter(a => a.stage === 'applied' || a.stage === 'oa' || a.stage === 'interview' || a.stage === 'offer');
   const interviewCount = applications.filter(a => a.stage === 'interview').length;
 
@@ -109,8 +182,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
     });
 
-    // Recent new postings activity
-    postings.filter(p => p.relevant).slice(0, 3).forEach(p => {
+    // Recent new postings activity matching user preferences
+    postings.filter(p => filterPostingByPreferences(p, currentUser.preferences, activeRoleLevel)).slice(0, 3).forEach(p => {
       activities.push({
         text: `New relevant posting: ${p.company_name} — ${p.title}`,
         time: getTimeAgo(p.first_seen_at),

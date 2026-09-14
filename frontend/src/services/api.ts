@@ -19,6 +19,7 @@ import {
 } from '../types';
 import { AuthService } from './auth';
 import { runGroundTruthMatcher } from './matcher';
+import { buildApiUrl } from './apiConfig';
 import defaultPrepResources from '../data/default_prep_resources.json';
 
 const STORAGE_KEYS = {
@@ -277,7 +278,7 @@ export class ArgusDataService {
     const user = this.getCurrentUser();
     if (!user) return null;
     try {
-      const res = await fetch(`/api/auth/preferences?email=${encodeURIComponent(user.email)}`);
+      const res = await fetch(buildApiUrl(`/auth/preferences?email=${encodeURIComponent(user.email)}`));
       if (res.ok) {
         const data = await res.json();
         if (data && typeof data === 'object') {
@@ -302,7 +303,7 @@ export class ArgusDataService {
     
     // Sync with backend PostgreSQL database
     try {
-      const response = await fetch('/api/auth/preferences', {
+      const response = await fetch(buildApiUrl('/auth/preferences'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -471,7 +472,7 @@ export class ArgusDataService {
 
     // Try calling backend Phase 6 Matcher LangGraph endpoint
     try {
-      const res = await fetch(`/api/postings/${posting.id}/interested`, {
+      const res = await fetch(buildApiUrl(`/postings/${posting.id}/interested`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -569,7 +570,7 @@ export class ArgusDataService {
     }
 
     // Also push asynchronously to backend Postgres if available
-    fetch(`/api/postings/${app.posting_id}/application`, {
+    fetch(buildApiUrl(`/postings/${app.posting_id}/application`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -603,11 +604,11 @@ export class ArgusDataService {
   public static async getCompanyExperiences(companyId: number, stage?: string): Promise<MergedExperienceItem[]> {
     // 1. Attempt fetching from backend PostgreSQL
     try {
-      let url = `/api/companies/${companyId}/experiences`;
+      let endpoint = `/companies/${companyId}/experiences`;
       if (stage && stage !== 'all') {
-        url += `?stage=${encodeURIComponent(stage)}`;
+        endpoint += `?stage=${encodeURIComponent(stage)}`;
       }
-      const res = await fetch(url);
+      const res = await fetch(buildApiUrl(endpoint));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -708,7 +709,7 @@ export class ArgusDataService {
 
     // Sync to backend if available
     try {
-      await fetch(`/api/companies/${newLog.company_id}/experiences`, {
+      await fetch(buildApiUrl(`/companies/${newLog.company_id}/experiences`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newLog)
@@ -726,7 +727,7 @@ export class ArgusDataService {
     this.save(STORAGE_KEYS.EXPERIENCES, filtered);
 
     try {
-      await fetch(`/api/experiences/${logId}`, {
+      await fetch(buildApiUrl(`/experiences/${logId}`), {
         method: 'DELETE'
       });
     } catch (e) {
@@ -737,7 +738,7 @@ export class ArgusDataService {
 
   public static async fetchExternalPrep(companyId: number): Promise<{ status: string; message: string; fetched_count: number; items: PrepResource[] }> {
     try {
-      const res = await fetch(`/api/companies/${companyId}/fetch-prep`, {
+      const res = await fetch(buildApiUrl(`/companies/${companyId}/fetch-prep`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -778,7 +779,7 @@ export class ArgusDataService {
     let telemetry: IngestionTelemetry | null = null;
 
     try {
-      const res = await fetch('/api/run-ingestion', {
+      const res = await fetch(buildApiUrl('/run-ingestion'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -828,10 +829,12 @@ export class ArgusDataService {
 
   public static async syncRemotePostings(): Promise<Posting[]> {
     try {
-      const res = await fetch('/api/postings');
+      const user = this.getCurrentUser();
+      const endpoint = user?.email ? `/postings?email=${encodeURIComponent(user.email)}` : '/postings';
+      const res = await fetch(buildApiUrl(endpoint));
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           const current = this.getPostings();
           const merged: Posting[] = data.map((rem: any) => {
             const existing = current.find(p => p.id === rem.id);
@@ -877,7 +880,7 @@ export class ArgusDataService {
 
   public static async syncRemoteCompanies(): Promise<Company[]> {
     try {
-      const res = await fetch('/api/companies');
+      const res = await fetch(buildApiUrl('/companies'));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {

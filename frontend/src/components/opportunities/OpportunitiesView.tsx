@@ -6,7 +6,7 @@ import {
   ExternalLink, 
   CheckCircle2
 } from 'lucide-react';
-import { Posting, Company, PostingStatus } from '../../types';
+import { Posting, Company, PostingStatus, UserProfile } from '../../types';
 import { GLOBAL_COUNTRIES } from '../../data/countries';
 
 interface OpportunitiesViewProps {
@@ -17,6 +17,7 @@ interface OpportunitiesViewProps {
   onStatusChange: (postingId: number, newStatus: PostingStatus) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  currentUser?: UserProfile | null;
 }
 
 export const isInternPosting = (p: Posting): boolean => {
@@ -43,13 +44,24 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   companies,
   onSelectPosting,
   searchQuery,
-  onSearchChange
+  onSearchChange,
+  currentUser
 }) => {
+  const initialRoleLevel = currentUser?.preferences?.role_level || 'all';
+  const initialLocation = React.useMemo(() => {
+    const locs = currentUser?.preferences?.locations;
+    if (locs && locs.length === 1) {
+      const match = GLOBAL_COUNTRIES.find(c => c.name.toLowerCase() === locs[0].toLowerCase() || c.id.toLowerCase() === locs[0].toLowerCase());
+      if (match) return match.id;
+    }
+    return 'all';
+  }, [currentUser?.preferences?.locations]);
+
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [roleLevelFilter, setRoleLevelFilter] = useState<'all' | 'intern' | 'new_grad' | 'experienced'>('all');
+  const [roleLevelFilter, setRoleLevelFilter] = useState<'all' | 'intern' | 'new_grad' | 'experienced'>(initialRoleLevel);
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
   const [filterOnlyRelevant, setFilterOnlyRelevant] = useState<boolean>(true);
-  const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [selectedLocation, setSelectedLocation] = useState<string>(initialLocation);
 
   // Helper to test if a posting matches a country preset
   const matchesLocationPreset = (p: Posting, countryId: string): boolean => {
