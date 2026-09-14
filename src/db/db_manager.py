@@ -339,8 +339,12 @@ class DatabaseManager:
                 return [Posting(**dict(r)) for r in rows]
 
 
-    def get_unnotified_relevant_postings(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Retrieves all relevant, unnotified postings joined with company details."""
+    def get_unnotified_relevant_postings(
+        self, limit: Optional[int] = None, preferences: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Retrieves all relevant, unnotified postings joined with company details, optionally filtered by user preferences."""
+        from src.classifier.relevance import RelevanceClassifier
+
         query = """
             SELECT 
                 p.id,
@@ -367,7 +371,7 @@ class DatabaseManager:
             ORDER BY p.first_seen_at ASC
         """
         params = []
-        if limit and limit > 0:
+        if limit and limit > 0 and not preferences:
             query += " LIMIT %s"
             params.append(limit)
 
@@ -375,7 +379,49 @@ class DatabaseManager:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-                return [dict(r) for r in rows]
+                results = [dict(r) for r in rows]
+
+        if not preferences:
+            return results
+
+        # Filter strictly by candidate preferences
+        role_level = str(preferences.get("role_level") or "all")
+        target_locations = preferences.get("locations") if isinstance(preferences.get("locations"), list) else None
+        target_company_ids = set(preferences.get("target_company_ids") or [])
+
+        filtered = []
+        for p in results:
+            if target_company_ids and p["company_id"] not in target_company_ids:
+                continue
+
+            raw = p.get("raw_json") or {}
+            raw_loc = raw.get("location")
+            if isinstance(raw_loc, dict):
+                loc_str = raw_loc.get("name") or ""
+            elif isinstance(raw_loc, str):
+                loc_str = raw_loc
+            else:
+                loc_str = ""
+
+            res = RelevanceClassifier.classify(
+                title=p.get("title") or "",
+                team=p.get("team"),
+                location=loc_str,
+                role_level=role_level,
+                target_locations=target_locations if target_locations else None,
+            )
+            if res.relevant:
+                filtered.append(p)
+                if limit and len(filtered) >= limit:
+                    break
+
+        return filtered
+
+    def get_pending_notifications(
+        self, limit: Optional[int] = None, preferences: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Retrieves unnotified relevant postings, optionally filtered by user preferences."""
+        return self.get_unnotified_relevant_postings(limit=limit, preferences=preferences)
 
     def mark_postings_notified(self, posting_ids: List[int]) -> int:
         """Marks a batch of posting IDs as notified (setting notified_at = NOW())."""
@@ -581,15 +627,85 @@ class DatabaseManager:
                         (pref_json, int(user_id_or_email)),
                     )
                 else:
+                    clean_email = str(user_id_or_email).strip().lower()
                     cur.execute(
-                        "UPDATE users SET preferences = %s, updated_at = NOW() WHERE LOWER(email) = %s RETURNING id, email, preferences;",
-                        (pref_json, str(user_id_or_email).strip().lower()),
+                        """
+                        INSERT INTO users (name, email, preferences, is_active, created_at, updated_at)
+                        VALUES ('Candidate', %s, %s, TRUE, NOW(), NOW())
+                        ON CONFLICT (email) DO UPDATE
+                        SET preferences = EXCLUDED.preferences, updated_at = NOW()
+                        RETURNING id, email, preferences;
+                        """,
+                        (clean_email, pref_json),
                     )
                 row = cur.fetchone()
             conn.commit()
             if row:
                 return dict(row.get("preferences") or {})
         return preferences
+
+    def reclassify_all_postings(self, preferences: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+        """Re-evaluates the relevance of all active postings in the database against specified or active preferences."""
+        from src.classifier.relevance import RelevanceClassifier
+        from src.config.companies import load_companies_config
+
+        if not preferences:
+            preferences = self.get_active_preferences()
+
+        role_level = str(preferences.get("role_level") or "all")
+        target_locations = preferences.get("locations") if isinstance(preferences.get("locations"), list) else None
+        target_company_ids = set(preferences.get("target_company_ids") or [])
+
+        catalog = load_companies_config()
+        all_companies = self.get_all_companies()
+        company_filters = {}
+        for c in all_companies:
+            cfg = catalog.get_company_by_name(c.name)
+            company_filters[c.id] = cfg.role_filter if cfg else []
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT id, company_id, title, team, raw_json FROM postings WHERE status != 'closed';")
+                rows = cur.fetchall()
+
+                relevant_ids = []
+                irrelevant_ids = []
+
+                for r in rows:
+                    comp_id = r["company_id"]
+                    if target_company_ids and comp_id not in target_company_ids:
+                        irrelevant_ids.append(r["id"])
+                        continue
+
+                    raw = r.get("raw_json") or {}
+                    raw_loc = raw.get("location")
+                    if isinstance(raw_loc, dict):
+                        loc_str = raw_loc.get("name") or ""
+                    elif isinstance(raw_loc, str):
+                        loc_str = raw_loc
+                    else:
+                        loc_str = ""
+
+                    res = RelevanceClassifier.classify(
+                        title=r["title"] or "",
+                        team=r.get("team"),
+                        location=loc_str,
+                        role_filter=company_filters.get(comp_id, []),
+                        role_level=role_level,
+                        target_locations=target_locations if target_locations else None,
+                    )
+                    if res.relevant:
+                        relevant_ids.append(r["id"])
+                    else:
+                        irrelevant_ids.append(r["id"])
+
+                if relevant_ids:
+                    cur.execute("UPDATE postings SET relevant = TRUE, updated_at = NOW() WHERE id = ANY(%s);", (relevant_ids,))
+                if irrelevant_ids:
+                    cur.execute("UPDATE postings SET relevant = FALSE, updated_at = NOW() WHERE id = ANY(%s);", (irrelevant_ids,))
+            conn.commit()
+
+        return {"relevant": len(relevant_ids), "irrelevant": len(irrelevant_ids)}
 
     def get_active_preferences(self) -> Dict[str, Any]:
         """Returns the primary active candidate's preferences for ingestion and notification filtering."""

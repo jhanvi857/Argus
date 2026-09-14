@@ -119,7 +119,7 @@
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.NOTIFICATION_EMAIL_FROM || $env.SMTP_USER }}",
+        "fromEmail": "={{ $env.RESEND_FROM_EMAIL || $env.NOTIFICATION_EMAIL_FROM || 'Argus <onboarding@resend.dev>' }}",
         "toEmail": "={{ $env.NOTIFICATION_EMAIL_TO }}",
         "subject": "=Argus: {{ $json.count }} New Relevant Job Openings",
         "html": "={{ $json.html }}",

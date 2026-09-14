@@ -60,13 +60,13 @@ def extract_fields(state: IngestionState) -> dict:
             "status": "error",
         }
 
-    # Try to extract fields from common ATS JSON structures
-    title = _extract_title(raw)
-    team = _extract_team(raw)
-    location = _extract_location(raw)
-    deadline = _extract_deadline(raw)
-    url = _extract_url(raw)
-    external_id = _extract_external_id(raw)
+    # Try to extract fields from common ATS JSON structures, falling back to state pre-populated from adapter
+    title = _extract_title(raw) or state.get("title")
+    team = _extract_team(raw) or state.get("team")
+    location = _extract_location(raw) or state.get("location")
+    deadline = _extract_deadline(raw) or state.get("deadline")
+    url = _extract_url(raw) or state.get("url")
+    external_id = _extract_external_id(raw) or state.get("external_id")
 
     if not title:
         return {

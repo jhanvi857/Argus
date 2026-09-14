@@ -1,4 +1,5 @@
 import { UserProfile, UserPreferences } from '../types';
+import { buildApiUrl } from './apiConfig';
 
 const STORAGE_KEYS = {
   VERIFIED_USERS: 'argus_verified_users_v4',
@@ -6,7 +7,6 @@ const STORAGE_KEYS = {
   PENDING_REGISTRATION: 'argus_pending_reg_v4'
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 type AuthListener = (user: UserProfile | null) => void;
 
@@ -132,7 +132,7 @@ export class AuthService {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+      const response = await fetch(buildApiUrl('/auth/send-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, full_name: cleanName })
@@ -221,7 +221,7 @@ export class AuthService {
     let verifiedUser: UserProfile | null = null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+      const response = await fetch(buildApiUrl('/auth/verify-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, otp_code: cleanOtp })
@@ -283,7 +283,7 @@ export class AuthService {
 
     // Sync preferences to backend DB asynchronously
     try {
-      fetch(`${API_BASE_URL}/auth/preferences`, {
+      fetch(buildApiUrl('/auth/preferences'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

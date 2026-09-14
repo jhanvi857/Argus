@@ -145,11 +145,13 @@ return [
 ];
 ```
 
-### ⑥ Send Email (SMTP)
-* **To**: `{{ $env.NOTIFICATION_EMAIL_TO }}` (or your personal alert email)
+### ⑥ Send Email (Resend SMTP / Resend API)
+* **From**: `{{ $env.RESEND_FROM_EMAIL || 'Argus <onboarding@resend.dev>' }}`
+* **To**: `{{ $env.NOTIFICATION_EMAIL_TO }}` (or candidate's verified alert inbox)
 * **Subject**: `Argus: {{ $json.count }} New Relevant Job Openings`
 * **Email format**: `HTML`
 * **HTML**: `={{ $json.html }}`
+* **SMTP Credentials**: Uses Resend SMTP (`smtp.resend.com:465`, user `resend`, pass `$RESEND_API_KEY`)
 
 ### ⑦ PostgreSQL (UPDATE notified_at for ALL jobs)
 * **Operation**: `Execute Query`

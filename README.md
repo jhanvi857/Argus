@@ -499,13 +499,21 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/argus
 GROQ_API_KEY=your_groq_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Email Notification & SMTP Settings
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_specific_password
+# Backend & Frontend URL Configuration (Localhost or Cloud Deployment)
+BACKEND_URL=http://localhost:8000
+VITE_BACKEND_URL=http://localhost:8000
+
+# Resend Email Configuration (Localhost & Production Deployment)
+RESEND_API_KEY=re_your_resend_api_key_here
+RESEND_FROM_EMAIL=Argus <onboarding@resend.dev>
 NOTIFICATION_EMAIL_TO=candidate@example.com
-NOTIFICATION_EMAIL_FROM=argus-alerts@example.com
+NOTIFICATION_EMAIL_FROM=Argus <onboarding@resend.dev>
+
+# Optional Resend SMTP Fallback (for n8n or legacy mailers)
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASS=re_your_resend_api_key_here
 ```
 
 ### 10.3 Running the Full Stack with Docker Compose

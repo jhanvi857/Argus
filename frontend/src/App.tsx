@@ -282,6 +282,7 @@ export const App: React.FC = () => {
       {/* 2. Opportunities Feed */}
       {currentRoute === 'opportunities' && (
         <OpportunitiesView
+          currentUser={currentUser}
           postings={postings}
           companies={companies}
           selectedPosting={selectedPosting}
