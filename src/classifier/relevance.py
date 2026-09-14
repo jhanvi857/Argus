@@ -158,13 +158,14 @@ class RelevanceClassifier:
         if not target_locations or any(t.lower() in ("all", "all global locations", "any") for t in target_locations):
             return True
 
-        norm_text = (location_text or "").lower()
-        if not norm_text or norm_text == "multiple locations":
-            # Don't aggressively drop postings where location is generic / unspecified
-            return True
+        norm_text = (location_text or "").lower().strip()
+        if not norm_text:
+            return False
 
         for target in target_locations:
             target_norm = target.lower().strip()
+            if not target_norm:
+                continue
             # Direct text match
             if target_norm in norm_text:
                 return True

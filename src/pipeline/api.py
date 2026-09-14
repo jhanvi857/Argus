@@ -64,21 +64,31 @@ def trigger():
     global LATEST_TELEMETRY
     LATEST_TELEMETRY["is_running"] = True
     try:
+        from src.db.db_manager import DatabaseManager
+        db = DatabaseManager()
+        
         result = run_all()
         successful = sum(1 for r in result if r.get("status") == "success")
         total_new_relevant = sum(r.get("relevant_postings", 0) for r in result if r.get("status") == "success")
+        
+        # Reclassify active postings against current candidate preferences
+        reclass_stats = db.reclassify_all_postings()
+        active_prefs = db.get_active_preferences()
+        unnotified = db.get_unnotified_relevant_postings(preferences=active_prefs)
         
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         LATEST_TELEMETRY = {
             "companies_checked": len(result),
             "successful_count": successful,
             "new_relevant_count": total_new_relevant,
+            "active_relevant_count": len(unnotified),
             "last_run_at": now_str,
             "is_running": False,
             "logs": [
                 f"[{now_str}] Ingestion cycle completed successfully.",
                 f"[{now_str}] Checked {len(result)} companies, {successful} healthy.",
-                f"[{now_str}] Detected {total_new_relevant} new relevant opportunities.",
+                f"[{now_str}] Discovered {total_new_relevant} new relevant opportunities in this run.",
+                f"[{now_str}] Evaluated preferences: {active_prefs.get('role_level', 'all')} in {active_prefs.get('locations', ['All'])} ({len(unnotified)} active opportunities).",
             ],
         }
         return {
@@ -86,6 +96,8 @@ def trigger():
             "companies_checked": len(result),
             "successful_count": successful,
             "new_relevant_count": total_new_relevant,
+            "active_relevant_count": len(unnotified),
+            "reclassified": reclass_stats,
             "results": result,
         }
     except Exception as exc:
@@ -98,6 +110,40 @@ def trigger():
 def get_telemetry():
     """Returns the latest ATS ingestion telemetry metrics."""
     return LATEST_TELEMETRY
+
+
+# =============================================================================
+# Resend Email Digest Notification Endpoints
+# =============================================================================
+
+class DigestNotificationRequest(BaseModel):
+    to_email: Optional[str] = None
+    posting_ids: Optional[List[int]] = None
+
+
+@app.post("/notifications/send-digest")
+def trigger_digest_notification(req: Optional[DigestNotificationRequest] = None):
+    """Dispatches an email digest of unnotified relevant opportunities via Resend."""
+    from src.pipeline.notification_service import send_digest_notification
+
+    to_email = req.to_email if req else None
+    posting_ids = req.posting_ids if req else None
+    result = send_digest_notification(to_email=to_email, posting_ids=posting_ids)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=500, detail=result.get("message"))
+    return result
+
+
+@app.get("/notifications/stats")
+def get_notification_statistics():
+    """Returns notification status and count of pending alerts."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    try:
+        return db.get_notification_stats()
+    except Exception as exc:
+        return {"error": str(exc)}
+
 
 
 # =============================================================================
@@ -218,12 +264,25 @@ def sync_companies():
 # =============================================================================
 
 @app.get("/postings")
-def list_postings(relevant_only: bool = True, status: Optional[str] = None):
-    """Retrieves postings joined with company details."""
+def list_postings(
+    relevant_only: bool = True,
+    status: Optional[str] = None,
+    email: Optional[str] = None,
+    role_level: Optional[str] = None,
+    location: Optional[str] = None,
+):
+    """Retrieves postings joined with company details, filtered by candidate preferences."""
     from src.db.db_manager import DatabaseManager
+    from src.classifier.relevance import RelevanceClassifier
 
     db = DatabaseManager()
     try:
+        user_pref = {}
+        if email:
+            user_pref = db.get_user_preferences(email)
+        if not user_pref:
+            user_pref = db.get_active_preferences()
+
         query = """
             SELECT 
                 p.id,
@@ -257,8 +316,12 @@ def list_postings(relevant_only: bool = True, status: Optional[str] = None):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-                # Format dates to string and extract location
                 results = []
+
+                eff_role_level = role_level or user_pref.get("role_level") or "all"
+                target_locations = [location] if location else user_pref.get("locations")
+                target_company_ids = set(user_pref.get("target_company_ids") or [])
+
                 for r in rows:
                     item = dict(r)
                     for date_field in ("first_seen_at", "last_seen_at", "deadline", "notified_at"):
@@ -273,6 +336,39 @@ def list_postings(relevant_only: bool = True, status: Optional[str] = None):
                     else:
                         item["location"] = "Multiple Locations"
                     item["required_skills"] = raw.get("required_skills") or []
+
+                    if relevant_only:
+                        if target_company_ids and item["company_id"] not in target_company_ids:
+                            continue
+
+                        # Test against location and career level
+                        if target_locations and not RelevanceClassifier.matches_location(
+                            f"{item['location']} {item.get('title', '')}", target_locations
+                        ):
+                            continue
+
+                        level_clean = eff_role_level.lower().strip()
+                        title_team = f"{item.get('title', '')} {item.get('team', '')}".lower()
+                        if level_clean == "intern":
+                            from src.classifier.relevance import INTERN_LEVEL_KEYWORDS
+                            import re
+                            if not any(re.search(p, title_team) for p in INTERN_LEVEL_KEYWORDS):
+                                continue
+                        elif level_clean == "new_grad":
+                            from src.classifier.relevance import NEW_GRAD_LEVEL_KEYWORDS, INTERN_LEVEL_KEYWORDS
+                            import re
+                            is_ng = any(re.search(p, title_team) for p in NEW_GRAD_LEVEL_KEYWORDS)
+                            is_int = any(re.search(p, title_team) for p in INTERN_LEVEL_KEYWORDS)
+                            if not is_ng or is_int:
+                                continue
+                        elif level_clean == "experienced":
+                            from src.classifier.relevance import EXPERIENCED_LEVEL_KEYWORDS, INTERN_LEVEL_KEYWORDS
+                            import re
+                            if any(re.search(p, title_team) for p in INTERN_LEVEL_KEYWORDS):
+                                continue
+                            if not any(re.search(p, title_team) for p in EXPERIENCED_LEVEL_KEYWORDS):
+                                continue
+
                     results.append(item)
                 return results
     except Exception as exc:
@@ -381,7 +477,7 @@ class LoginRequest(BaseModel):
 
 @app.post("/auth/send-otp")
 def api_send_otp(req: SendOtpRequest):
-    """Sends a 6-digit OTP verification code to the given email address via SMTP."""
+    """Sends a 6-digit OTP verification code to the given email address via Resend."""
     from src.auth.email_verification import send_verification_otp
 
     res = send_verification_otp(email=req.email, full_name=req.full_name)
@@ -471,12 +567,24 @@ def api_save_preferences(req: PreferencesUpdateRequest):
     """Saves user preferences in Postgres."""
     from src.db.db_manager import DatabaseManager
     db = DatabaseManager()
+    # Align target_roles with role_level if not explicitly provided
+    resolved_target_roles = req.target_roles
+    if not resolved_target_roles:
+        if req.role_level == "intern":
+            resolved_target_roles = ["Internships"]
+        elif req.role_level == "new_grad":
+            resolved_target_roles = ["New Grad"]
+        elif req.role_level == "experienced":
+            resolved_target_roles = ["Experienced"]
+        else:
+            resolved_target_roles = ["Internships", "New Grad"]
+
     pref_dict = {
         "role_level": req.role_level or "all",
         "candidate_stage": req.candidate_stage or "College Student",
         "candidate_stage_detail": req.candidate_stage_detail or "Seeking internships & co-ops",
-        "target_roles": req.target_roles or ["Internships", "New Grad"],
-        "locations": req.locations or [],
+        "target_roles": resolved_target_roles,
+        "locations": req.locations if req.locations is not None else [],
         "preferred_roles": req.preferred_roles or [],
         "focus_areas": req.focus_areas or [],
         "target_company_ids": req.target_company_ids or [],
@@ -496,6 +604,13 @@ def api_save_preferences(req: PreferencesUpdateRequest):
             saved = db.save_user_preferences(users[0]["id"], pref_dict)
         else:
             saved = pref_dict
+
+    # Immediately reclassify database postings under the updated user preferences
+    try:
+        db.reclassify_all_postings(saved)
+    except Exception as reclass_err:
+        logger.warning(f"Reclassification after preferences save: {reclass_err}")
+
     return {"status": "ok", "preferences": saved}
 
 
