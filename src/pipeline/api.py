@@ -1,12 +1,15 @@
+import os
 import logging
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from src.pipeline.ingestion_service import run_all
+from src.pipeline import notification_service
+send_digest_notification = notification_service.send_digest_notification
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +109,105 @@ def trigger():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# =============================================================================
+# Production Scheduled Digest Runner (/digest/run)
+# =============================================================================
+
+class DigestRunRequest(BaseModel):
+    to_email: Optional[str] = None
+    force_digest: bool = False
+
+
+def _verify_cron_secret(authorization: Optional[str], x_cron_secret: Optional[str]):
+    expected_secret = (os.getenv("CRON_SECRET") or os.getenv("ARGUS_CRON_SECRET") or "").strip()
+    if not expected_secret:
+        return
+    token = ""
+    if authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization.strip()
+    elif x_cron_secret:
+        token = x_cron_secret.strip()
+
+    if token != expected_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid cron secret")
+
+
+@app.post("/digest/run")
+@app.get("/digest/run")
+def run_digest(
+    req: Optional[DigestRunRequest] = None,
+    authorization: Optional[str] = Header(None),
+    x_cron_secret: Optional[str] = Header(None),
+):
+    """Production scheduled trigger endpoint.
+
+    1. Executes IngestionPipeline for all target companies.
+    2. Identifies new/updated postings from diff engine.
+    3. Filters by user's role preferences.
+    4. Formats and sends email digest via Resend with zero-duplicate guarantee.
+    No n8n dependency required.
+    """
+    _verify_cron_secret(authorization, x_cron_secret)
+    global LATEST_TELEMETRY
+    LATEST_TELEMETRY["is_running"] = True
+    try:
+        from src.db.db_manager import DatabaseManager
+
+        db = DatabaseManager()
+
+        # 1. Run batch ingestion across all configured companies
+        run_results = run_all()
+        successful = sum(1 for r in run_results if r.get("status") == "success")
+        total_new = sum(r.get("new_postings", 0) for r in run_results if r.get("status") == "success")
+        total_new_relevant = sum(r.get("relevant_postings", 0) for r in run_results if r.get("status") == "success")
+
+        # 2. Reclassify active postings against current candidate preferences
+        db.reclassify_all_postings()
+
+        # 3. Compile and dispatch Resend digest with atomic zero-duplicate claim
+        to_email = req.to_email if req else None
+        digest_res = notification_service.send_digest_notification(to_email=to_email, db_manager=db)
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        LATEST_TELEMETRY = {
+            "companies_checked": len(run_results),
+            "successful_count": successful,
+            "new_relevant_count": total_new_relevant,
+            "digest_sent_count": digest_res.get("count", 0),
+            "last_run_at": now_str,
+            "is_running": False,
+            "logs": [
+                f"[{now_str}] Production digest run completed successfully.",
+                f"[{now_str}] Checked {len(run_results)} companies ({successful} successful).",
+                f"[{now_str}] Discovered {total_new} new postings ({total_new_relevant} relevant).",
+                f"[{now_str}] Digest status: {digest_res.get('message')}",
+            ],
+        }
+
+        return {
+            "status": "ok",
+            "message": digest_res.get("message"),
+            "companies_checked": len(run_results),
+            "successful_count": successful,
+            "new_postings_count": total_new,
+            "new_relevant_count": total_new_relevant,
+            "digest_sent": digest_res.get("count", 0) > 0,
+            "digest_count": digest_res.get("count", 0),
+            "notified_ids": digest_res.get("notified_ids", []),
+            "resend_id": digest_res.get("resend_id"),
+            "dev_mode": digest_res.get("dev_mode", False),
+            "results": run_results,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        LATEST_TELEMETRY["is_running"] = False
+        LATEST_TELEMETRY["logs"].append(f"Production digest error: {exc}")
+        logger.error(f"Error executing /digest/run: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/telemetry")
 def get_telemetry():
     """Returns the latest ATS ingestion telemetry metrics."""
@@ -124,11 +226,9 @@ class DigestNotificationRequest(BaseModel):
 @app.post("/notifications/send-digest")
 def trigger_digest_notification(req: Optional[DigestNotificationRequest] = None):
     """Dispatches an email digest of unnotified relevant opportunities via Resend."""
-    from src.pipeline.notification_service import send_digest_notification
-
     to_email = req.to_email if req else None
     posting_ids = req.posting_ids if req else None
-    result = send_digest_notification(to_email=to_email, posting_ids=posting_ids)
+    result = notification_service.send_digest_notification(to_email=to_email, posting_ids=posting_ids)
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=result.get("message"))
     return result
