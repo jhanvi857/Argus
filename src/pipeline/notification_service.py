@@ -169,11 +169,81 @@ def send_digest_notification(
         Dict with status, dispatched count, and details.
     """
     db = db_manager or DatabaseManager()
+
+    # If no specific recipient is targeted, resolve active registered users
+    if not to_email:
+        registered = db.get_all_users() if hasattr(db, "get_all_users") else []
+        active_candidates = [
+            u for u in registered
+            if u.get("email") and (u.get("preferences") or {}).get("email_notifications_enabled") is not False
+        ]
+        if active_candidates:
+            all_notified_ids = set()
+            total_sent = 0
+            messages = []
+            resend_ids = []
+
+            for u in active_candidates:
+                cand_email = u["email"]
+                cand_pref = u.get("preferences") or {}
+                # Query unnotified postings matching THIS candidate's particular preferences
+                matching = []
+                if hasattr(db, "get_unnotified_relevant_postings"):
+                    matching = db.get_unnotified_relevant_postings(limit=100, preferences=cand_pref)
+                elif hasattr(db, "get_pending_notifications"):
+                    matching = db.get_pending_notifications(limit=100, preferences=cand_pref)
+
+                if not matching:
+                    logger.info(f"Candidate {cand_email} has no new postings matching their preferences. Skipping email.")
+                    continue
+
+                # Candidate has matching postings! Format and send
+                cand_postings = [p for p in matching if p.get("id")]
+                html_body = build_digest_html(cand_postings)
+                plain_body = f"Argus detected {len(cand_postings)} new relevant job openings:\n\n" + "\n".join(
+                    f"- {p.get('title')} at {p.get('company_name')} ({p.get('url')})" for p in cand_postings
+                )
+                res = send_resend_digest(
+                    to_email=cand_email,
+                    html_content=html_body,
+                    text_content=plain_body,
+                    subject=f"Argus Alert: {len(cand_postings)} New Relevant Job Openings",
+                )
+                if res.get("status") == "ok":
+                    total_sent += len(cand_postings)
+                    all_notified_ids.update(p["id"] for p in cand_postings)
+                    if res.get("resend_id"):
+                        resend_ids.append(res["resend_id"])
+                    messages.append(f"Dispatched {len(cand_postings)} job(s) to {cand_email}")
+                    logger.info(f"Dispatched personalized digest to {cand_email} ({len(cand_postings)} jobs matching preferences).")
+
+            if all_notified_ids and hasattr(db, "mark_postings_notified"):
+                db.mark_postings_notified(list(all_notified_ids))
+
+            return {
+                "status": "ok",
+                "message": "; ".join(messages) if messages else "No users with matching new postings found. No emails sent.",
+                "count": total_sent,
+                "notified_ids": list(all_notified_ids),
+                "resend_id": resend_ids[0] if resend_ids else None,
+            }
+
+    # Fallback to specific recipient or configured NOTIFICATION_EMAIL_TO
     recipient = (
         to_email
         or os.getenv("NOTIFICATION_EMAIL_TO")
-        or "candidate@example.com"
-    )
+        or ""
+    ).strip()
+
+    # If no valid email address is configured or only dummy address, skip sending
+    if not recipient or recipient == "candidate@example.com":
+        logger.info("No active recipient configured or dummy email detected. Skipping email dispatch.")
+        return {
+            "status": "ok",
+            "message": "No active users with configured email preferences found. Email dispatch skipped.",
+            "count": 0,
+            "notified_ids": [],
+        }
 
     # 1. Fetch recipient preferences
     user_pref = {}

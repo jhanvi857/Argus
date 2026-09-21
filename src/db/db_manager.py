@@ -38,8 +38,9 @@ class DatabaseManager:
         )
 
     def get_connection(self):
-        """Creates and returns a connection to PostgreSQL."""
-        return psycopg2.connect(self.database_url, connect_timeout=3)
+        """Creates and returns a connection to PostgreSQL (resilient to Neon serverless cold-starts)."""
+        timeout = int(os.getenv("PGCONNECT_TIMEOUT", "10"))
+        return psycopg2.connect(self.database_url, connect_timeout=timeout)
 
     def init_schema(self, schema_file: Optional[Path] = None) -> bool:
         """Executes the DDL schema file to create all tables and indexes."""
