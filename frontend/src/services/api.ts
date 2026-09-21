@@ -830,7 +830,9 @@ export class ArgusDataService {
   public static async syncRemotePostings(): Promise<Posting[]> {
     try {
       const user = this.getCurrentUser();
-      const endpoint = user?.email ? `/postings?email=${encodeURIComponent(user.email)}` : '/postings';
+      const endpoint = user?.email
+        ? `/postings?relevant_only=false&email=${encodeURIComponent(user.email)}`
+        : '/postings?relevant_only=false';
       const res = await fetch(buildApiUrl(endpoint));
       if (res.ok) {
         const data = await res.json();
