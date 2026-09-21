@@ -81,12 +81,84 @@ def build_digest_html(postings: List[Dict[str, Any]]) -> str:
     """
 
 
+def send_resend_digest(
+    to_email: str,
+    html_content: str,
+    text_content: Optional[str] = None,
+    subject: Optional[str] = None,
+    api_key: Optional[str] = None,
+    from_email: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Dispatches an email via the Resend REST API (https://api.resend.com/emails).
+
+    Args:
+        to_email: Recipient email address.
+        html_content: Rendered HTML body.
+        text_content: Plain-text fallback body.
+        subject: Email subject line.
+        api_key: Optional Resend API key (defaults to RESEND_API_KEY env var).
+        from_email: Optional sender address (defaults to RESEND_FROM_EMAIL env var).
+
+    Returns:
+        Dict with status ("ok" or "error"), resend_id, or error message.
+    """
+    import requests
+
+    key = (api_key or os.getenv("RESEND_API_KEY", "")).strip()
+    sender = (
+        from_email
+        or os.getenv("RESEND_FROM_EMAIL")
+        or os.getenv("NOTIFICATION_EMAIL_FROM")
+        or "Argus <onboarding@resend.dev>"
+    )
+    subj = subject or "Argus Alert: New Relevant Job Openings"
+
+    if not key or key.startswith("re_your_"):
+        logger.info(f"[Argus Resend Dev Mode] RESEND_API_KEY not configured. Mocking dispatch to {to_email}.")
+        return {
+            "status": "ok",
+            "dev_mode": True,
+            "message": f"Dev mode: Mock email dispatched to {to_email}.",
+            "resend_id": "dev_mock_id",
+        }
+
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    payload: Dict[str, Any] = {
+        "from": sender,
+        "to": [to_email],
+        "subject": subj,
+        "html": html_content,
+    }
+    if text_content:
+        payload["text"] = text_content
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        if resp.status_code in (200, 201):
+            res_id = resp.json().get("id")
+            return {"status": "ok", "resend_id": res_id}
+        else:
+            return {
+                "status": "error",
+                "message": f"Resend API returned {resp.status_code}: {resp.text}",
+            }
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
 def send_digest_notification(
     to_email: Optional[str] = None,
     posting_ids: Optional[List[int]] = None,
     db_manager: Optional[DatabaseManager] = None,
 ) -> Dict[str, Any]:
     """Compiles unnotified relevant postings and dispatches an email digest via Resend.
+
+    Preserves zero-duplicate guarantee by atomically fetching and marking postings as
+    notified in the database transaction.
 
     Args:
         to_email: Target recipient. Defaults to NOTIFICATION_EMAIL_TO env var.
@@ -126,18 +198,28 @@ def send_digest_notification(
             "notified_ids": [],
         }
 
-    # 2. Fetch postings filtered by candidate preferences
-    if hasattr(db, "get_pending_notifications"):
-        all_postings = db.get_pending_notifications(limit=100, preferences=user_pref if user_pref else None)
-    elif hasattr(db, "get_unnotified_relevant_postings"):
-        all_postings = db.get_unnotified_relevant_postings(limit=100, preferences=user_pref if user_pref else None)
-    else:
-        all_postings = []
+    # 2. Fetch postings filtered by candidate preferences with atomic zero-duplicate claim
+    claimed_atomically = False
+    postings = []
+    if hasattr(db, "claim_and_mark_unnotified_postings"):
+        res = db.claim_and_mark_unnotified_postings(
+            limit=100,
+            preferences=user_pref if user_pref else None,
+            posting_ids=posting_ids,
+        )
+        if isinstance(res, list):
+            postings = res
+            claimed_atomically = True
 
-    if posting_ids:
-        postings = [p for p in all_postings if p.get("id") in posting_ids]
-    else:
-        postings = all_postings
+    if not claimed_atomically:
+        if hasattr(db, "get_pending_notifications"):
+            all_postings = db.get_pending_notifications(limit=100, preferences=user_pref if user_pref else None)
+            if isinstance(all_postings, list):
+                postings = [p for p in all_postings if p.get("id") in posting_ids] if posting_ids else all_postings
+        elif hasattr(db, "get_unnotified_relevant_postings"):
+            all_postings = db.get_unnotified_relevant_postings(limit=100, preferences=user_pref if user_pref else None)
+            if isinstance(all_postings, list):
+                postings = [p for p in all_postings if p.get("id") in posting_ids] if posting_ids else all_postings
 
     if not postings:
         return {
@@ -152,6 +234,7 @@ def send_digest_notification(
     plain_text = f"Argus detected {len(postings)} new relevant job openings:\n\n" + "\n".join(
         f"- {p.get('title')} at {p.get('company_name')} ({p.get('url')})" for p in postings
     )
+    subject = f"Argus Alert: {len(postings)} New Relevant Job Openings"
 
     api_key = os.getenv("RESEND_API_KEY", "").strip()
     from_email = (
@@ -160,58 +243,47 @@ def send_digest_notification(
         or "Argus <onboarding@resend.dev>"
     )
 
-    # 2. Check if Resend API key is configured
+    # 3. Check if Resend API key is configured
     if api_key and not api_key.startswith("re_your_"):
-        import requests
-        url = "https://api.resend.com/emails"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "from": from_email,
-            "to": [recipient],
-            "subject": f"Argus Alert: {len(postings)} New Relevant Job Openings",
-            "html": html_content,
-            "text": plain_text,
-        }
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=10)
-            if resp.status_code in (200, 201):
-                res_id = resp.json().get("id")
-                logger.info(f"Dispatched Resend email digest to {recipient} (id: {res_id}) for postings {ids_to_mark}")
-                # Mark as notified in Postgres
+        resend_result = send_resend_digest(
+            to_email=recipient,
+            html_content=html_content,
+            text_content=plain_text,
+            subject=subject,
+            api_key=api_key,
+            from_email=from_email,
+        )
+        if resend_result["status"] == "ok":
+            res_id = resend_result.get("resend_id")
+            logger.info(f"Dispatched Resend email digest to {recipient} (id: {res_id}) for postings {ids_to_mark}")
+            if not claimed_atomically and hasattr(db, "mark_postings_notified"):
                 db.mark_postings_notified(ids_to_mark)
-                return {
-                    "status": "ok",
-                    "message": f"Successfully sent digest for {len(postings)} job(s) to {recipient}.",
-                    "count": len(postings),
-                    "resend_id": res_id,
-                    "notified_ids": ids_to_mark,
-                }
-            else:
-                logger.error(f"Resend API error ({resp.status_code}): {resp.text}")
-                return {
-                    "status": "error",
-                    "message": f"Resend API returned {resp.status_code}: {resp.text}",
-                    "count": len(postings),
-                    "notified_ids": [],
-                }
-        except Exception as exc:
-            logger.error(f"Failed to dispatch Resend notification: {exc}")
+            return {
+                "status": "ok",
+                "message": f"Successfully sent digest for {len(postings)} job(s) to {recipient}.",
+                "count": len(postings),
+                "resend_id": res_id,
+                "notified_ids": ids_to_mark,
+            }
+        else:
+            # Resend returned an error; rollback claimed status if needed
+            logger.error(f"Resend dispatch failed: {resend_result.get('message')}")
+            if claimed_atomically and hasattr(db, "unmark_postings_notified"):
+                db.unmark_postings_notified(ids_to_mark)
             return {
                 "status": "error",
-                "message": str(exc),
+                "message": resend_result.get("message", "Resend API error"),
                 "count": len(postings),
                 "notified_ids": [],
             }
 
-    # 3. Dev mode / fallback when Resend is not configured with a live key
+    # 4. Dev mode / fallback when Resend is not configured with a live key
     logger.info(
         f"[Argus Resend Dev Mode] RESEND_API_KEY not configured. Digest generated for {len(postings)} job(s) for {recipient}."
     )
-    # Mark as notified in dev mode to avoid infinite loops on localhost
-    db.mark_postings_notified(ids_to_mark)
+    if not claimed_atomically and hasattr(db, "mark_postings_notified"):
+        db.mark_postings_notified(ids_to_mark)
+
     return {
         "status": "ok",
         "message": f"Dev mode: Processed digest for {len(postings)} job(s) for {recipient}.",

@@ -443,6 +443,130 @@ class DatabaseManager:
             conn.commit()
         return affected
 
+    def claim_and_mark_unnotified_postings(
+        self,
+        limit: Optional[int] = None,
+        preferences: Optional[Dict[str, Any]] = None,
+        posting_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Atomically fetches and marks unnotified relevant postings in a single transaction.
+
+        Guarantees zero duplicates across concurrent or scheduled runs by locking rows
+        (FOR UPDATE OF p SKIP LOCKED) and updating notified_at = NOW() in the same transaction.
+        """
+        from src.classifier.relevance import RelevanceClassifier
+
+        query = """
+            SELECT 
+                p.id,
+                p.company_id,
+                p.external_id,
+                p.title,
+                p.team,
+                p.deadline,
+                p.url,
+                p.first_seen_at,
+                p.last_seen_at,
+                p.raw_json,
+                p.status,
+                p.relevant,
+                p.notified_at,
+                c.name AS company_name,
+                c.ats_type,
+                c.careers_page_url
+            FROM postings p
+            JOIN companies c ON p.company_id = c.id
+            WHERE p.relevant = TRUE 
+              AND p.notified_at IS NULL 
+              AND p.status != 'closed'
+        """
+        params: List[Any] = []
+        if posting_ids:
+            query += " AND p.id = ANY(%s)"
+            params.append(posting_ids)
+
+        query += " ORDER BY p.first_seen_at ASC FOR UPDATE OF p SKIP LOCKED;"
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                results = [dict(r) for r in rows]
+
+                if not results:
+                    return []
+
+                if preferences:
+                    role_level = str(preferences.get("role_level") or "all")
+                    target_locations = preferences.get("locations") if isinstance(preferences.get("locations"), list) else None
+                    target_company_ids = set(preferences.get("target_company_ids") or [])
+
+                    filtered = []
+                    for p in results:
+                        if target_company_ids and p["company_id"] not in target_company_ids:
+                            continue
+
+                        raw = p.get("raw_json") or {}
+                        raw_loc = raw.get("location")
+                        if isinstance(raw_loc, dict):
+                            loc_str = raw_loc.get("name") or ""
+                        elif isinstance(raw_loc, str):
+                            loc_str = raw_loc
+                        else:
+                            loc_str = ""
+
+                        res = RelevanceClassifier.classify(
+                            title=p.get("title") or "",
+                            team=p.get("team"),
+                            location=loc_str,
+                            role_level=role_level,
+                            target_locations=target_locations if target_locations else None,
+                        )
+                        if res.relevant:
+                            filtered.append(p)
+                            if limit and len(filtered) >= limit:
+                                break
+                    selected = filtered
+                else:
+                    selected = results[:limit] if limit else results
+
+                if not selected:
+                    return []
+
+                selected_ids = [p["id"] for p in selected]
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET notified_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = ANY(%s);
+                    """,
+                    (selected_ids,),
+                )
+            conn.commit()
+
+        return selected
+
+    def unmark_postings_notified(self, posting_ids: List[int]) -> int:
+        """Rolls back the notified status of postings (sets notified_at = NULL) if email dispatch fails."""
+        if not posting_ids:
+            return 0
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE postings
+                    SET notified_at = NULL,
+                        updated_at = NOW()
+                    WHERE id = ANY(%s);
+                    """,
+                    (posting_ids,),
+                )
+                affected = cur.rowcount
+            conn.commit()
+        return affected
+
     def get_notification_stats(self) -> Dict[str, int]:
         """Returns aggregate metrics on postings, relevance, and notification status."""
         with self.get_connection() as conn:

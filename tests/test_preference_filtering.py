@@ -97,7 +97,13 @@ class TestPreferenceFiltering(unittest.TestCase):
         )
         self.assertTrue(res3_ng.relevant)
 
-    def test_send_digest_notification_filtered_by_preferences(self):
+    @patch("requests.post")
+    def test_send_digest_notification_filtered_by_preferences(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": "res_pref_test_123"}
+        mock_post.return_value = mock_response
+
         mock_db = MagicMock()
         mock_db.get_user_preferences.return_value = {
             "locations": ["India"],
