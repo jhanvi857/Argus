@@ -9,7 +9,7 @@ Aggregator portals (such as LinkedIn or Indeed) often surface stale, duplicate, 
 ## Table of Contents
 
 - [1. System Architecture](#1-system-architecture)
-- [2. n8n Orchestration Pipeline](#2-n8n-orchestration-pipeline)
+- [2. Orchestration: Local Dev (n8n) vs. Production (Cron + Resend)](#2-orchestration-local-dev-n8n-vs-production-cron--resend)
 - [3. Core Architectural Decisions (ADRs)](#3-core-architectural-decisions-adrs)
 - [4. Data Pipeline and LangGraph Workflows](#4-data-pipeline-and-langgraph-workflows)
 - [5. Database Schema & User Preferences](#5-database-schema--user-preferences)
@@ -25,59 +25,102 @@ Aggregator portals (such as LinkedIn or Indeed) often surface stale, duplicate, 
 
 ## 1. System Architecture
 
-The Argus platform comprises five distinct architectural layers operating across isolated containers connected through a private Docker bridge network:
+The Argus platform is architected with dual deployment profiles: a lean production architecture driven by GitHub Actions cron and Resend, alongside an interactive local development environment powered by n8n:
 
 ```mermaid
 graph TD
-    A[n8n Automation Engine<br/>Cron & Webhook Orchestrator] -->|HTTP POST /run-ingestion| B[FastAPI Backend Service]
-    A -->|Read Unnotified Postings| C[(PostgreSQL Database<br/>Source of Truth)]
-    A -->|Mark Notified| C
-    A -->|SMTP Dispatch| D[Candidate Verified Inbox]
+    subgraph Production Pipeline [Production: Lean Cron + Resend]
+        GHA[GitHub Actions Cron<br/>schedule: 0 */4 * * *] -->|HTTP POST /digest/run| B[FastAPI Backend Service]
+        B -->|Resend REST API| RESEND[Resend Email Delivery]
+        RESEND --> D[Candidate Verified Inbox]
+    end
 
-    B -->|Network Ingestion| E[Enterprise ATS Platforms<br/>Greenhouse, Lever, Workday, etc.]
-    B -->|Ingestion LangGraph| F[Groq Llama-3.3-70b<br/>Extract, Classify, Dedupe]
-    B -->|Matcher LangGraph| G[Gemini 2.0 Flash<br/>Grounded Matcher with Retry Loop]
-    B -->|Read / Write| C
+    subgraph Local Dev Pipeline [Local Dev: n8n Orchestrator]
+        A[n8n Automation Engine<br/>Local Dev & Visual Debugging] -.->|HTTP POST /run-ingestion| B
+        A -.->|Read Unnotified Postings| C[(PostgreSQL Database<br/>Source of Truth)]
+        A -.->|Mark Notified| C
+        A -.->|SMTP Dispatch| D
+    end
 
-    H[React TypeScript Frontend<br/>Vite + Nginx Reverse Proxy] -->|REST /api/*| B
-    H -->|State & Offline Cache| I[Browser LocalStorage]
+    subgraph Ingestion & Intelligence Core
+        B -->|Network Ingestion| E[Enterprise ATS Platforms<br/>Greenhouse, Lever, Workday, etc.]
+        B -->|Ingestion LangGraph| F[Groq Llama-3.3-70b<br/>Extract, Classify, Dedupe]
+        B -->|Matcher LangGraph| G[Gemini 2.0 Flash<br/>Grounded Matcher with Retry Loop]
+        B -->|Atomic Zero-Duplicate Claim| C
+    end
 
-    J[Claude Desktop / AI Agents] -->|MCP stdio Protocol| K[Argus MCP Server<br/>5 Diagnostic Tools]
-    K -->|Database Queries| C
-    K -->|Run Matcher| B
+    subgraph Interfaces
+        H[React TypeScript Frontend<br/>Vite + Nginx Reverse Proxy] -->|REST /api/*| B
+        H -->|State & Offline Cache| I[Browser LocalStorage]
+        J[Claude Desktop / AI Agents] -->|MCP stdio Protocol| K[Argus MCP Server<br/>5 Diagnostic Tools]
+        K -->|Database Queries| C
+        K -->|Run Matcher| B
+    end
 ```
 
 ### Component Summary
 
-- **n8n Orchestrator**: Executes scheduled cron triggers and handles external webhooks. It acts strictly as an orchestration engine, delegating business logic to the backend and performing SMTP delivery.
-- **FastAPI Backend (`argus-app`)**: Hosts the ATS ingestion pipeline, two separate LangGraph graphs, email OTP verification, and REST endpoints.
+- **FastAPI Backend (`argus-app`)**: Hosts the ATS ingestion pipeline, two separate LangGraph graphs, email OTP verification, `/digest/run` production runner, and REST endpoints.
 - **PostgreSQL Database (`argus-postgres`)**: Serves as the immutable source of truth for raw snapshot archives, parsed job postings, ground-truth candidate projects, semantic match results, and application tracking stages.
+- **Resend Email Service**: Production delivery mechanism dispatching responsive job digests directly via HTTPS (`https://api.resend.com/emails`).
+- **GitHub Actions Scheduled Trigger**: Production headless cron runner (`.github/workflows/scheduled_digest.yml`) executing periodic POST requests to `/digest/run` with bearer authentication.
+- **n8n Orchestrator (`docker-compose.local.yml`)**: Local development container for visual workflow introspection, manual step testing, and payload validation.
 - **React Frontend (`argus-frontend`)**: Responsive single-page application providing job feed monitoring, real-time telemetry, interactive application lifecycle tracking, and project portfolio management.
 - **MCP Server (`mcp_server.py`)**: Exposes live database and matcher operations to AI agents via the standard Model Context Protocol.
 
 ---
 
-## 2. n8n Orchestration Pipeline
+## 2. Orchestration: Local Dev (n8n) vs. Production (Cron + Resend)
 
-The n8n workflow manages the scheduled execution cycle, queries the database for freshly identified relevant opportunities, generates the digest, dispatches emails through SMTP, and marks postings as notified.
+Argus separates deployment concerns cleanly between local development and production environments.
+
+### The Trade-Off Explicitly
+
+| Dimension | Local Dev (`n8n`) | Production (`cron` + Resend) |
+|---|---|---|
+| **Primary Purpose** | Visual workflow debugging, manual step re-execution, interactive payload inspection | Maximum uptime, minimal resource overhead, deterministic operations, zero credential drift |
+| **Resource Footprint** | Heavy (+ ~500MB RAM, Node.js runtime, SQLite/n8n volume) | Lean (0 additional containers, 0 added RAM) |
+| **Trigger Mechanism** | n8n internal cron node / webhook listener (`:5678`) | GitHub Actions cron (`schedule: '0 */4 * * *'`) or host crontab |
+| **Email Dispatch** | n8n SMTP node via Resend SMTP | Direct Python HTTP POST to Resend REST API (`https://api.resend.com/emails`) |
+| **Duplicate Prevention** | Sequential n8n workflow nodes (SELECT -> Send -> UPDATE) | Single atomic PostgreSQL transaction (`FOR UPDATE OF p SKIP LOCKED` + `UPDATE postings SET notified_at = NOW()`) |
+| **Ops Complexity** | High (managing local volume permissions, node upgrades) | Zero (standard container stack deployed anywhere) |
+
+### Why n8n for Local Dev?
+During adapter development and prompt engineering, visual feedback is invaluable. n8n provides an intuitive node graph where you can:
+- Inspect exact JSON payloads output by ATS adapters and diff engines in real time.
+- Re-trigger individual nodes without executing the entire scraping loop.
+- Manually edit HTML email templates and test SMTP dispatch interactively.
+
+### Why Cron + Resend in Production?
+In production, running a separate Node.js service (n8n) solely to trigger an HTTP endpoint every few hours is unnecessary operational overhead:
+1. **Zero-Duplicate Guarantee via Atomic Transaction**: The production `/digest/run` endpoint queries and marks postings as notified within the **same PostgreSQL database transaction** using `FOR UPDATE OF p SKIP LOCKED`. Even under concurrent webhook triggers or retry attempts, the same posting is never notified twice.
+2. **Cost & Simplicity**: Production requires only `postgres`, `app`, and `frontend`. No n8n volume management, database migrations, or Node.js memory leaks to monitor.
+3. **Headless Execution**: A GitHub Actions workflow (`.github/workflows/scheduled_digest.yml`) or a standard Linux `crontab` periodically triggers `/digest/run` securely using an optional `CRON_SECRET`.
+
+---
+
+### Local Dev Workflow (with n8n)
+
+To boot the full development stack including n8n:
+
+```bash
+# Start PostgreSQL, FastAPI, Frontend, and n8n together
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+Access n8n at `http://localhost:5678`. The pre-configured workflow is automatically mounted from `./n8n/argus_workflow.json`.
 
 ![n8n Workflow Pipeline](docs/images/n8n_workflow.png)
 
-### Workflow Node Breakdown
+#### n8n Local Workflow Node Breakdown
 
-1. **Schedule Trigger**: Fires on a configured cron schedule (every 2 hours) to initiate the scrape cycle.
-2. **HTTP Request**: Sends an `HTTP POST` request to `http://app:8000/run-ingestion`, triggering the backend ATS adapter loop, diff engine, and Ingestion LangGraph across all configured companies.
-3. **Execute a SQL query (`PostgreSQL`)**: Executes an SQL query against the primary database to pull genuinely new, relevant postings:
+1. **Schedule Trigger**: Fires periodically (e.g. every 2 hours) to trigger the local dev test cycle.
+2. **HTTP Request**: Sends `POST http://app:8000/run-ingestion`, triggering the backend adapter loop, diff engine, and LangGraph classifier.
+3. **Execute a SQL query (`PostgreSQL`)**: Queries unnotified relevant postings:
    ```sql
    SELECT 
-       p.id, 
-       p.title, 
-       p.team, 
-       p.url, 
-       p.deadline, 
-       p.first_seen_at, 
-       c.name AS company_name, 
-       c.ats_type 
+       p.id, p.title, p.team, p.url, p.deadline, p.first_seen_at, 
+       c.name AS company_name, c.ats_type 
    FROM postings p 
    JOIN companies c ON p.company_id = c.id 
    WHERE p.relevant = true 
@@ -85,15 +128,39 @@ The n8n workflow manages the scheduled execution cycle, queries the database for
      AND p.status != 'closed' 
    ORDER BY p.first_seen_at ASC;
    ```
-4. **If**: Evaluates whether new unnotified postings were returned (`$input.all().length > 0`). If false, the execution terminates quietly to prevent inbox noise.
-5. **Code in JavaScript**: Transforms returned job rows into a responsive, clean HTML digest email displaying company names, role titles, teams, deadlines, and direct official application links.
-6. **Send an Email**: Uses candidate SMTP credentials to dispatch the compiled digest to the candidate's verified email address.
-7. **Execute a SQL query1 (`Postgres - Mark Notified`)**: Updates the database to prevent duplicate alerts:
-   ```sql
-   UPDATE postings
-   SET notified_at = NOW()
-   WHERE id = ANY(ARRAY[{{ $json.posting_ids.join(',') }}]::integer[]);
-   ```
+4. **If**: Evaluates `$input.all().length > 0` to prevent blank alert dispatches.
+5. **Code in JavaScript**: Transforms job rows into an HTML digest preview.
+6. **Send an Email**: Dispatches via local SMTP credentials.
+7. **Execute a SQL query1 (`Postgres - Mark Notified`)**: Updates `notified_at = NOW()`.
+
+---
+
+### Production Workflow (Headless Cron + Resend)
+
+In production, deploy only the base `docker-compose.yml`:
+
+```bash
+# Production deployment (No n8n overhead, saves ~500MB RAM)
+docker compose up -d --build
+```
+
+The production pipeline is triggered via the headless `/digest/run` endpoint:
+
+```bash
+# Manually trigger production digest (or curl via cron)
+curl -X POST "https://your-domain.com/digest/run" \
+  -H "Authorization: Bearer YOUR_CRON_SECRET" \
+  -H "Content-Type: application/json"
+```
+
+#### GitHub Actions Scheduled Trigger
+
+Argus includes an automated production cron workflow at [`.github/workflows/scheduled_digest.yml`](.github/workflows/scheduled_digest.yml):
+- **Schedule**: Executes automatically every 4 hours (`0 */4 * * *`).
+- **Manual Trigger**: Supports manual trigger with optional `to_email` override via the GitHub Actions UI.
+- **Required Repository Secrets**:
+  - `ARGUS_API_URL`: Base URL of your deployed FastAPI app (e.g., `https://api.argus.yourdomain.com`).
+  - `ARGUS_CRON_SECRET`: Secret token matching `CRON_SECRET` on your FastAPI server.
 
 ---
 
@@ -514,14 +581,35 @@ SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key_here
+
+# Production Scheduled Trigger Security (Optional)
+CRON_SECRET=your_secure_cron_secret_here
 ```
 
-### 10.3 Running the Full Stack with Docker Compose
+### 10.3 Running Production Stack (Headless Cron + Resend)
 
-To boot PostgreSQL, the FastAPI backend, n8n, and the frontend web server simultaneously:
+To boot the lean production stack (PostgreSQL, FastAPI backend, and Frontend UI) without n8n:
 
 ```bash
 docker compose up -d --build
+```
+
+Access points:
+- Frontend UI: `http://localhost:3000`
+- Backend API Docs: `http://localhost:8000/docs`
+- PostgreSQL: `localhost:5432`
+
+Triggering production digest:
+```bash
+curl -X POST "http://localhost:8000/digest/run" -H "Content-Type: application/json"
+```
+
+### 10.4 Running Local Development Stack (with n8n)
+
+To boot PostgreSQL, FastAPI, Frontend, and the n8n interactive automation console simultaneously:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 Access points:
@@ -530,7 +618,7 @@ Access points:
 - n8n Automation Console: `http://localhost:5678`
 - PostgreSQL: `localhost:5432`
 
-### 10.4 Local Development Setup
+### 10.5 Native Development Setup (without Docker)
 
 If running components natively without Docker:
 
