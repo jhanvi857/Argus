@@ -1,0 +1,73 @@
+name: Argus Production Scheduled Digest
+
+on:
+  schedule:
+    # Trigger every 4 hours: at minute 0 past hour 0, 4, 8, 12, 16, and 20
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      to_email:
+        description: 'Optional override recipient email'
+        required: false
+        type: string
+        default: ''
+      force_digest:
+        description: 'Force digest dispatch'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  run-digest:
+    name: Trigger Production Digest Run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Ingestion & Email Digest Endpoint
+        id: trigger
+        run: |
+          set -e
+          API_URL="${{ secrets.ARGUS_API_URL }}"
+          CRON_SECRET="${{ secrets.ARGUS_CRON_SECRET }}"
+          
+          if [ -z "$API_URL" ]; then
+            echo "ERROR: ARGUS_API_URL secret is not set."
+            exit 1
+          fi
+
+          AUTH_HEADER=""
+          if [ -n "$CRON_SECRET" ]; then
+            AUTH_HEADER="Authorization: Bearer $CRON_SECRET"
+          fi
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "to_email": "${{ inputs.to_email || '' }}",
+            "force_digest": ${{ inputs.force_digest || false }}
+          }
+          EOF
+          )
+
+          echo "Dispatching POST request to: $API_URL/digest/run"
+          
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/digest/run" \
+            -H "Content-Type: application/json" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            -d "$PAYLOAD")
+
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n 1)
+
+          echo "Response HTTP Status: $HTTP_STATUS"
+          echo "Response Body:"
+          echo "$HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Request to /digest/run failed with HTTP status $HTTP_STATUS: $HTTP_BODY"
+            exit 1
+          fi
+
+          echo "digest_status=success" >> $GITHUB_OUTPUT
+          echo "###  Argus Production Digest Completed" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$HTTP_BODY" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

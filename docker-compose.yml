@@ -52,41 +52,12 @@ services:
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Argus <onboarding@resend.dev>}
       NOTIFICATION_EMAIL_TO: ${NOTIFICATION_EMAIL_TO:-candidate@example.com}
       BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      CRON_SECRET: ${CRON_SECRET:-}
     volumes:
       - .:/app
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - argus-network
-
-  # ============================================================================
-  # n8n Automation & Cron Orchestrator
-  # ============================================================================
-  n8n:
-    image: docker.n8n.io/n8nio/n8n
-    container_name: argus-n8n
-    restart: unless-stopped
-    ports:
-      - "5678:5678"
-    environment:
-      - GENERIC_TIMEZONE=Asia/Kolkata
-      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
-      - RESEND_API_KEY=${RESEND_API_KEY:-}
-      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-Argus <onboarding@resend.dev>}
-      - NOTIFICATION_EMAIL_TO=${NOTIFICATION_EMAIL_TO:-candidate@example.com}
-      - NOTIFICATION_EMAIL_FROM=${RESEND_FROM_EMAIL:-Argus <onboarding@resend.dev>}
-      - SMTP_HOST=${SMTP_HOST:-smtp.resend.com}
-      - SMTP_PORT=${SMTP_PORT:-465}
-      - SMTP_USER=${SMTP_USER:-resend}
-      - SMTP_PASS=${SMTP_PASS:-${RESEND_API_KEY:-}}
-      - BACKEND_URL=${BACKEND_URL:-http://app:8000}
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./n8n:/data/n8n_workflows
-    depends_on:
-      - postgres
-      - app
     networks:
       - argus-network
 
@@ -112,6 +83,4 @@ networks:
 
 volumes:
   postgres_data:
-    driver: local
-  n8n_data:
     driver: local

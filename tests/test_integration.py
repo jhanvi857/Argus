@@ -133,16 +133,23 @@ class TestSystemIntegration(unittest.TestCase):
         self.assertIn("SET notified_at = NOW()", update_query)
 
     def test_docker_compose_configuration(self):
-        """Verify docker-compose.yml defines postgres, app, n8n, and frontend services with network linking."""
+        """Verify docker-compose.yml defines production services (postgres, app, frontend) and docker-compose.local.yml adds n8n."""
         compose_file = self.project_root / "docker-compose.yml"
         self.assertTrue(compose_file.exists(), "docker-compose.yml must exist")
         content = compose_file.read_text(encoding="utf-8")
 
         self.assertIn("argus-postgres", content)
         self.assertIn("argus-app", content)
-        self.assertIn("argus-n8n", content)
         self.assertIn("argus-frontend", content)
         self.assertIn("argus-network", content)
+        # Production compose must NOT include n8n container to save memory
+        self.assertNotIn("argus-n8n", content)
+
+        local_compose_file = self.project_root / "docker-compose.local.yml"
+        self.assertTrue(local_compose_file.exists(), "docker-compose.local.yml must exist for local dev")
+        local_content = local_compose_file.read_text(encoding="utf-8")
+        self.assertIn("argus-n8n", local_content)
+        self.assertIn("n8n_workflows", local_content)
 
 
 if __name__ == "__main__":
