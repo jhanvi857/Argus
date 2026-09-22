@@ -376,11 +376,12 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
     """Invokes LLM provider (Gemini or Groq) with OutputFixingParser or falls back to deterministic matching."""
     parser = PydanticOutputParser(pydantic_object=MatchResult)
 
-    preferred_provider = os.getenv("LLM_PROVIDER", "groq" if os.getenv("GROQ_API_KEY") else "gemini").lower()
+    preferred_provider = os.getenv("LLM_PROVIDER", "").lower().strip()
+    groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
 
-    # 1. Try Groq if preferred or configured
-    groq_key = os.getenv("GROQ_API_KEY")
-    if preferred_provider == "groq" and groq_key:
+    # 1. Try Groq if configured (and not explicitly set to Gemini-only)
+    if groq_key and not groq_key.startswith(("your_", "gsk_your_")) and preferred_provider != "gemini":
         try:
             from langchain_groq import ChatGroq
 
@@ -419,29 +420,36 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
             except Exception as exc2:
                 logger.warning(f"Groq secondary LLM call failed: {exc2} — attempting Gemini")
 
-    # 2. Try Gemini
-    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if gemini_key:
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
+    # 2. Try Gemini (fallback from Groq or primary if Groq unconfigured)
+    if gemini_key and not gemini_key.startswith(("your_", "AIzaSy_your_")):
+        gemini_models = [
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+        ]
+        gemini_models = list(dict.fromkeys(gemini_models))
+        for g_model in gemini_models:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
 
-            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-            llm = ChatGoogleGenerativeAI(
-                model=model_name,
-                google_api_key=gemini_key,
-                temperature=0.2,
-                timeout=15,
-            )
-            fixer = OutputFixingParser.from_llm(parser=parser, llm=llm) if OutputFixingParser else parser
+                llm = ChatGoogleGenerativeAI(
+                    model=g_model,
+                    google_api_key=gemini_key,
+                    temperature=0.2,
+                    timeout=15,
+                )
+                fixer = OutputFixingParser.from_llm(parser=parser, llm=llm) if OutputFixingParser else parser
 
-            format_instructions = parser.get_format_instructions()
-            full_prompt = f"{prompt}\n\n{format_instructions}"
-            response = llm.invoke(full_prompt)
-            parsed: MatchResult = fixer.parse(response.content) if hasattr(fixer, "parse") else parser.parse(response.content)
+                format_instructions = parser.get_format_instructions()
+                full_prompt = f"{prompt}\n\n{format_instructions}"
+                response = llm.invoke(full_prompt)
+                parsed: MatchResult = fixer.parse(response.content) if hasattr(fixer, "parse") else parser.parse(response.content)
 
-            return parsed.model_dump()
-        except Exception as exc:
-            logger.warning(f"Gemini LLM call failed: {exc} — attempting fallback")
+                return parsed.model_dump()
+            except Exception as exc:
+                logger.warning(f"Gemini LLM model {g_model} failed: {exc} — trying next model")
+                continue
 
     # 3. Deterministic Grounded Matcher (guarantees test and offline reliability)
     # Picks top 2 projects strictly from shortlist, synthesizing grounded technical rationale

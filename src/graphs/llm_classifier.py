@@ -101,62 +101,89 @@ def classify_with_llm(
     Raises:
         No exception — returns a fallback result on any LLM error.
     """
-    try:
-        from langchain_groq import ChatGroq
+    # Build classification prompt
+    role_pref_text = ROLE_PREFERENCES
+    if role_level == "intern":
+        role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants INTERNSHIPS / SUMMER ANALYST / CO-OP roles ONLY. Reject all full-time new grad or entry-level positions."
+    elif role_level == "new_grad":
+        role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants NEW GRAD / ENTRY LEVEL full-time roles ONLY. Reject all student internships or co-ops."
+    elif role_level == "experienced":
+        role_pref_text += "\nCRITICAL CONSTRAINT: Candidate is an EXPERIENCED / INDUSTRY ENGINEER (SDE I-II). Reject all student internships, co-ops, and summer analyst roles. Accept full-time Software Engineer / SDE roles."
 
-        groq_api_key = os.getenv("GROQ_API_KEY")
-        if not groq_api_key:
-            logger.warning("GROQ_API_KEY not set — falling back to rule-based only")
-            return _fallback_result("GROQ_API_KEY not configured")
+    if target_locations:
+        role_pref_text += f"\nLOCATION CONSTRAINT: Candidate targets only these locations/countries: {', '.join(target_locations)}. Reject postings outside these regions."
 
-        model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-        llm = ChatGroq(
-            model=model_name,
-            api_key=groq_api_key,
-            temperature=0.0,
-            max_tokens=256,
-            timeout=10,
-        )
+    prompt = CLASSIFICATION_PROMPT.format(
+        role_preferences=role_pref_text,
+        role_filter=", ".join(role_filter) if role_filter else "None",
+        title=title or "N/A",
+        team=team or "N/A",
+        location=location or "N/A",
+        deadline=deadline or "N/A",
+        raw_context=(raw_context or "N/A")[:500],
+    )
 
-        # Use structured output for reliable parsing
-        structured_llm = llm.with_structured_output(LLMClassificationResult)
+    # 1. Primary: Try Groq LLM
+    groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    if groq_api_key and not groq_api_key.startswith(("your_", "gsk_your_")):
+        try:
+            from langchain_groq import ChatGroq
 
-        role_pref_text = ROLE_PREFERENCES
-        if role_level == "intern":
-            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants INTERNSHIPS / SUMMER ANALYST / CO-OP roles ONLY. Reject all full-time new grad or entry-level positions."
-        elif role_level == "new_grad":
-            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate wants NEW GRAD / ENTRY LEVEL full-time roles ONLY. Reject all student internships or co-ops."
-        elif role_level == "experienced":
-            role_pref_text += "\nCRITICAL CONSTRAINT: Candidate is an EXPERIENCED / INDUSTRY ENGINEER (SDE I-II). Reject all student internships, co-ops, and summer analyst roles. Accept full-time Software Engineer / SDE roles."
+            model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+            llm = ChatGroq(
+                model=model_name,
+                api_key=groq_api_key,
+                temperature=0.0,
+                max_tokens=256,
+                timeout=10,
+            )
+            structured_llm = llm.with_structured_output(LLMClassificationResult)
+            result = structured_llm.invoke(prompt)
+            logger.info(
+                f"Groq LLM classification: relevant={result.relevant}, "
+                f"confidence={result.confidence:.2f}, rationale='{result.rationale}'"
+            )
+            return result
+        except Exception as exc:
+            logger.warning(f"Groq LLM classification failed: {exc} — switching to Gemini fallback")
+    else:
+        logger.info("GROQ_API_KEY not configured — automatically using Gemini API")
 
-        if target_locations:
-            role_pref_text += f"\nLOCATION CONSTRAINT: Candidate targets only these locations/countries: {', '.join(target_locations)}. Reject postings outside these regions."
+    # 2. Fallback: Try Gemini LLM if Groq failed or unconfigured
+    gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if gemini_key and not gemini_key.startswith(("your_", "AIzaSy_your_")):
+        models_to_try = [
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+        ]
+        # Remove duplicates while preserving order
+        models_to_try = list(dict.fromkeys(models_to_try))
+        for g_model in models_to_try:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
 
-        prompt = CLASSIFICATION_PROMPT.format(
-            role_preferences=role_pref_text,
-            role_filter=", ".join(role_filter) if role_filter else "None",
-            title=title or "N/A",
-            team=team or "N/A",
-            location=location or "N/A",
-            deadline=deadline or "N/A",
-            raw_context=(raw_context or "N/A")[:500],
-        )
+                llm = ChatGoogleGenerativeAI(
+                    model=g_model,
+                    google_api_key=gemini_key,
+                    temperature=0.0,
+                    timeout=12,
+                )
+                structured_llm = llm.with_structured_output(LLMClassificationResult)
+                result = structured_llm.invoke(prompt)
+                logger.info(
+                    f"Gemini ({g_model}) LLM classification: relevant={result.relevant}, "
+                    f"confidence={result.confidence:.2f}, rationale='{result.rationale}'"
+                )
+                return result
+            except Exception as g_exc:
+                logger.warning(f"Gemini classification with {g_model} failed: {g_exc}")
+                continue
 
-        result = structured_llm.invoke(prompt)
-        logger.info(
-            f"LLM classification: relevant={result.relevant}, "
-            f"confidence={result.confidence:.2f}, rationale='{result.rationale}'"
-        )
-        return result
-
-    except ImportError:
-        logger.error("langchain-groq not installed — pip install langchain-groq")
-        return _fallback_result("langchain-groq not installed")
-
-    except Exception as exc:
-        # Graceful degradation: never block the pipeline on LLM failure
-        logger.error(f"LLM classification failed: {exc}", exc_info=True)
-        return _fallback_result(f"LLM error: {type(exc).__name__}: {exc}")
+    # 3. Graceful degradation: fall back to rule-based classifier
+    logger.warning("Both Groq and Gemini LLM calls failed or were unconfigured — falling back to rule-based")
+    return _fallback_result("Groq and Gemini LLMs unavailable")
 
 
 def _fallback_result(reason: str) -> LLMClassificationResult:
