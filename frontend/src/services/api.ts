@@ -708,7 +708,11 @@ export class ArgusDataService {
         experience_reflection: app.experience_reflection,
         offer_details: app.offer_details,
         referral_status: app.referral_status,
-        resume_version: app.resume_version
+        resume_version: app.resume_version,
+        resume_version_id: app.resume_version_id,
+        backfill: (app as any).backfill,
+        applied_at: app.applied_at,
+        ats_score_at_apply: app.ats_score_at_apply
       })
     }).catch(e => console.warn('Could not sync application to backend DB:', e));
 

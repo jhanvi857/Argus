@@ -9,9 +9,10 @@ import {
   ExternalLink,
   Check,
   MessageSquare,
-  FileText
+  FileText,
+  Download
 } from 'lucide-react';
-import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus, ExperienceLogVisibility, AuthorDisplayMode } from '../../types';
+import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus, ExperienceLogVisibility, AuthorDisplayMode, ResumeVersion } from '../../types';
 import { ArgusDataService } from '../../services/api';
 import { ExperiencesPanel } from '../experiences/ExperiencesPanel';
 
@@ -125,6 +126,9 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [appStage, setAppStage] = useState<ApplicationStage>('applied');
   const [appReferral, setAppReferral] = useState<ReferralStatus>('none');
   const [appResume, setAppResume] = useState<string>('');
+  const [appResumeVersionId, setAppResumeVersionId] = useState<number | null>(null);
+  const [availableResumes, setAvailableResumes] = useState<ResumeVersion[]>([]);
+  const [isBackfillMode, setIsBackfillMode] = useState<boolean>(false);
   const [appOaDate, setAppOaDate] = useState<string>('');
   const [appInterviewDate, setAppInterviewDate] = useState<string>('');
   const [appInterviewRound, setAppInterviewRound] = useState<string>('');
@@ -138,6 +142,11 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [isSavedToast, setIsSavedToast] = useState<boolean>(false);
 
   useEffect(() => {
+    setAvailableResumes(ArgusDataService.getResumes());
+    ArgusDataService.fetchResumes().then(res => setAvailableResumes(res)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!posting) return;
     const existing = ArgusDataService.getApplication(posting.id);
     if (existing) {
@@ -145,6 +154,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       setAppStage(existing.stage);
       setAppReferral(existing.referral_status);
       setAppResume(existing.resume_version || '');
+      setAppResumeVersionId(existing.resume_version_id || null);
       setAppOaDate(existing.oa_date || '');
       setAppInterviewDate(existing.interview_date || '');
       setAppInterviewRound(existing.interview_round || '');
@@ -155,11 +165,14 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       setAppVisibility(existing.visibility || 'private');
       setAppAuthorDisplayMode(existing.author_display_mode || 'named');
       setAppConfidentialityAck(existing.confidentiality_ack || false);
+      setIsBackfillMode(false);
     } else {
       setCurrentApp(null);
       setAppStage('applied');
       setAppReferral('none');
-      setAppResume('');
+      const defaultRes = availableResumes[0];
+      setAppResume(defaultRes?.label || defaultRes?.name || '');
+      setAppResumeVersionId(defaultRes ? Number(defaultRes.id) : null);
       setAppOaDate('');
       setAppInterviewDate('');
       setAppInterviewRound('');
@@ -170,6 +183,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       setAppVisibility('private');
       setAppAuthorDisplayMode('named');
       setAppConfidentialityAck(false);
+      setIsBackfillMode(false);
     }
   }, [posting?.id]);
 
@@ -199,14 +213,27 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
 
   const handleQuickStageChange = (newStage: ApplicationStage) => {
     if (!posting) return;
+
+    if (newStage === 'applied' && !currentApp?.resume_version_id && !appResumeVersionId) {
+      setAppStage('applied');
+      setIsLogModalOpen(true);
+      return;
+    }
+
     setAppStage(newStage);
+
+    const targetResumeId = appResumeVersionId || currentApp?.resume_version_id;
+    const targetResumeLabel = appResume || currentApp?.resume_version;
 
     const saved = ArgusDataService.saveApplication({
       posting_id: posting.id,
       user_id: currentUser.id,
       stage: newStage,
       referral_status: appReferral,
-      resume_version: appResume,
+      resume_version_id: targetResumeId,
+      resume_version: targetResumeLabel,
+      ats_score_at_apply: currentApp?.ats_score_at_apply || (matchResult ? matchResult.overall_fit_score : null),
+      applied_at: currentApp?.applied_at || (newStage === 'applied' ? new Date().toISOString() : null),
       oa_date: appOaDate || null,
       interview_date: appInterviewDate || null,
       interview_round: appInterviewRound,
@@ -236,12 +263,27 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       return;
     }
 
+    if (['applied', 'oa', 'interview', 'offer'].includes(appStage) && !appResumeVersionId && !currentApp?.resume_version_id) {
+      alert('Please select a resume version from your library to pin to this application.');
+      return;
+    }
+
+    const targetResumeId = isBackfillMode 
+      ? appResumeVersionId 
+      : (currentApp?.resume_version_id || appResumeVersionId);
+    const targetResumeLabel = isBackfillMode
+      ? appResume
+      : (currentApp?.resume_version || appResume);
+
     const saved = ArgusDataService.saveApplication({
       posting_id: posting.id,
       user_id: currentUser.id,
       stage: appStage,
       referral_status: appReferral,
-      resume_version: appResume,
+      resume_version_id: targetResumeId,
+      resume_version: targetResumeLabel,
+      ats_score_at_apply: currentApp?.ats_score_at_apply || (matchResult ? matchResult.overall_fit_score : null),
+      applied_at: currentApp?.applied_at || (['applied', 'oa', 'interview', 'offer'].includes(appStage) ? new Date().toISOString() : null),
       oa_date: appOaDate || null,
       interview_date: appInterviewDate || null,
       interview_round: appInterviewRound,
@@ -469,6 +511,69 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Row 3.5: Pinned Application Submission Status */}
+              {currentApp && ['applied', 'oa', 'interview', 'offer'].includes(currentApp.stage) && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  background: 'rgba(173,40,49,0.04)',
+                  padding: '9px 14px',
+                  borderRadius: 'var(--border-radius-md)',
+                  border: '1px solid rgba(173,40,49,0.18)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary-navy)' }}>
+                      Submitted: <strong>{currentApp.resume_version || 'Resume Version'}</strong>
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
+                      ({currentApp.applied_at ? new Date(currentApp.applied_at).toLocaleDateString() : (currentApp.applied_date || 'Recently')})
+                    </span>
+                    {currentApp.ats_score_at_apply !== undefined && currentApp.ats_score_at_apply !== null && (
+                      <span style={{
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        color: 'var(--primary)',
+                        background: 'rgba(173,40,49,0.08)',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--border-radius-full)'
+                      }}>
+                        ATS est. {currentApp.ats_score_at_apply}/100
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {currentApp.resume_version_id ? (
+                      <a
+                        href={ArgusDataService.getResumeDownloadUrl(currentApp.resume_version_id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-secondary btn-sm"
+                        style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '4px 10px' }}
+                      >
+                        <Download size={13} />
+                        <span>Download Pinned PDF</span>
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        style={{ color: '#b45309', background: '#fef3c7', fontSize: '11.5px', padding: '3px 8px' }}
+                        onClick={() => {
+                          setIsBackfillMode(true);
+                          setIsLogModalOpen(true);
+                        }}
+                      >
+                        Backfill Resume
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Row 4: View Tab Switcher (Details vs Experiences) */}
               <div style={{
@@ -828,6 +933,56 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                       );
                     })}
                   </div>
+                </div>
+
+                {/* Resume Version Pinning Selector */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--gray-800)', margin: 0 }}>
+                    Resume Version {['applied', 'oa', 'interview', 'offer'].includes(appStage) && <span style={{ color: 'var(--primary)' }}>* (Required upon applying)</span>}
+                  </label>
+                  {currentApp?.resume_version_id && !isBackfillMode ? (
+                    <div style={{
+                      padding: '8px 12px',
+                      background: 'var(--gray-50)',
+                      border: '1px solid var(--gray-200)',
+                      borderRadius: 'var(--border-radius-sm)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--gray-800)' }}>
+                        🔒 Pinned: {currentApp.resume_version}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        onClick={() => setIsBackfillMode(true)}
+                        style={{ fontSize: '11px', color: 'var(--primary)', padding: '2px 6px' }}
+                      >
+                        Re-pin / Backfill
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      className="form-select"
+                      value={appResumeVersionId || ''}
+                      onChange={e => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        setAppResumeVersionId(val);
+                        const found = availableResumes.find(r => r.id === val);
+                        if (found) setAppResume(found.label || found.name || found.file_name);
+                      }}
+                      required={['applied', 'oa', 'interview', 'offer'].includes(appStage)}
+                      style={{ fontSize: '12.5px', width: '100%', boxSizing: 'border-box' }}
+                    >
+                      <option value="">Select Resume Version from Library...</option>
+                      {availableResumes.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.label || r.name} ({r.file_name})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>

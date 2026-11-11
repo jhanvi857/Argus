@@ -295,7 +295,11 @@ export interface Application {
   user_id: string;
   posting_id: number;
   posting?: Posting;
+  resume_version_id?: number | null;
   resume_version?: string;
+  resume_file_name?: string;
+  ats_score_at_apply?: number | null;
+  applied_at?: string | null;
   oa_date?: string | null;
   interview_date?: string | null;
   interview_round?: string;

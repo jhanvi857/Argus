@@ -487,11 +487,15 @@ class ApplicationUpdateRequest(BaseModel):
     oa_date: Optional[str] = None
     referral_status: Optional[str] = None
     resume_version: Optional[str] = None
+    resume_version_id: Optional[int] = None
+    ats_score_at_apply: Optional[int] = None
+    applied_at: Optional[str] = None
+    backfill: Optional[bool] = False
 
 
 @app.get("/applications")
-def list_applications():
-    """Retrieves all tracked applications joined with postings and companies."""
+def list_applications(resume_version_id: Optional[int] = Query(None)):
+    """Retrieves all tracked applications joined with postings, companies, and pinned resumes."""
     from src.db.db_manager import DatabaseManager
 
     db = DatabaseManager()
@@ -503,7 +507,11 @@ def list_applications():
                 a.stage,
                 a.oa_date,
                 a.referral_status,
-                a.resume_version,
+                a.resume_version_id,
+                COALESCE(rv.label, a.resume_version) AS resume_version,
+                rv.file_name AS resume_file_name,
+                a.applied_at,
+                a.ats_score_at_apply,
                 a.notes,
                 a.updated_at,
                 p.title,
@@ -513,31 +521,59 @@ def list_applications():
             FROM applications a
             JOIN postings p ON a.posting_id = p.id
             JOIN companies c ON p.company_id = c.id
+            LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
+            WHERE (%s IS NULL OR a.resume_version_id = %s)
             ORDER BY a.updated_at DESC;
         """
         with db.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(query)
+                cur.execute(query, (resume_version_id, resume_version_id))
                 rows = cur.fetchall()
                 results = []
                 for r in rows:
                     item = dict(r)
                     if item.get("oa_date"):
                         item["oa_date"] = str(item["oa_date"])
+                    if item.get("applied_at"):
+                        item["applied_at"] = str(item["applied_at"])
                     if item.get("updated_at"):
                         item["updated_at"] = str(item["updated_at"])
                     results.append(item)
                 return results
     except Exception as exc:
+        logger.error(f"Failed to list applications: {exc}")
         return []
 
 
 @app.post("/postings/{posting_id}/application")
 def update_application(posting_id: int, req: ApplicationUpdateRequest):
-    """Updates or creates application tracking status for a posting."""
+    """Updates or creates application tracking status for a posting with immutable resume pinning."""
     from src.db.db_manager import DatabaseManager
 
     db = DatabaseManager()
+    clean_stage = req.stage.lower()
+
+    # When marking applied or higher, require a resume version
+    existing = db.get_application_by_posting_id(posting_id)
+    if clean_stage in ("applied", "oa", "phone_screen", "technical_interview", "onsite", "offer"):
+        if not req.resume_version_id and not (existing and existing.get("resume_version_id")):
+            raise HTTPException(
+                status_code=400,
+                detail="A resume version must be selected when marking a posting as Applied."
+            )
+        # Immutability validation: if already pinned, prevent silent overwriting of resume_version_id unless backfill=True
+        if (
+            existing 
+            and existing.get("resume_version_id") 
+            and req.resume_version_id 
+            and existing["resume_version_id"] != req.resume_version_id 
+            and not req.backfill
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Application resume is immutable once submitted. Backfill mode is required to repin past records."
+            )
+
     try:
         updated = db.update_application_status(
             posting_id=posting_id,
@@ -546,8 +582,14 @@ def update_application(posting_id: int, req: ApplicationUpdateRequest):
             oa_date=req.oa_date,
             referral_status=req.referral_status,
             resume_version=req.resume_version,
+            resume_version_id=req.resume_version_id,
+            ats_score_at_apply=req.ats_score_at_apply,
+            applied_at=req.applied_at,
+            backfill=bool(req.backfill),
         )
         return {"status": "ok", "application": updated}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

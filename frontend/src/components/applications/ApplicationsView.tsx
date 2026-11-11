@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Briefcase,
   Trash2,
@@ -10,9 +10,11 @@ import {
   MessageSquare,
   FileText,
   Search,
-  ChevronRight
+  ChevronRight,
+  Download,
+  Lock
 } from 'lucide-react';
-import { Application, ApplicationStage, Posting, ReferralStatus, UserProfile, ExperienceLogVisibility, AuthorDisplayMode } from '../../types';
+import { Application, ApplicationStage, Posting, ReferralStatus, UserProfile, ExperienceLogVisibility, AuthorDisplayMode, ResumeVersion } from '../../types';
 import { ArgusDataService } from '../../services/api';
 import { ExperiencesPanel } from '../experiences/ExperiencesPanel';
 
@@ -54,6 +56,8 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
   onRefresh
 }) => {
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [resumeFilter, setResumeFilter] = useState<string>('all');
+  const [resumesList, setResumesList] = useState<ResumeVersion[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
@@ -63,6 +67,8 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
   const [stage, setStage] = useState<ApplicationStage>('applied');
   const [referralStatus, setReferralStatus] = useState<ReferralStatus>('none');
   const [resumeVersion, setResumeVersion] = useState<string>('');
+  const [selectedResumeVersionId, setSelectedResumeVersionId] = useState<number | string | ''>('');
+  const [isBackfillMode, setIsBackfillMode] = useState<boolean>(false);
   const [oaDate, setOaDate] = useState<string>('');
   const [interviewDate, setInterviewDate] = useState<string>('');
   const [interviewRound, setInterviewRound] = useState<string>('');
@@ -73,6 +79,12 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
   const [visibility, setVisibility] = useState<ExperienceLogVisibility>('private');
   const [authorDisplayMode, setAuthorDisplayMode] = useState<AuthorDisplayMode>('named');
   const [confidentialityAck, setConfidentialityAck] = useState<boolean>(false);
+
+  useEffect(() => {
+    ArgusDataService.fetchResumes(true).then(list => {
+      setResumesList(list);
+    }).catch(err => console.warn('Could not fetch resumes in ApplicationsView:', err));
+  }, []);
 
   const stages: { id: ApplicationStage; label: string }[] = [
     { id: 'interested', label: 'Interested' },
@@ -101,13 +113,18 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
 
   const filteredApps = applications.filter(app => {
     const matchesFilter = activeFilter === 'all' ? true : app.stage === activeFilter;
+    const matchesResume = resumeFilter === 'all'
+      ? true
+      : (app.resume_version_id && String(app.resume_version_id) === resumeFilter) ||
+        (app.resume_version === resumeFilter) ||
+        (app.resume_file_name === resumeFilter);
     const company = app.posting?.company_name || '';
     const title = app.posting?.title || '';
     const questions = app.interview_questions || '';
     const notesStr = app.notes || '';
     const matchesSearch = !searchQuery.trim() || 
       `${company} ${title} ${questions} ${notesStr}`.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
+    return matchesFilter && matchesResume && matchesSearch;
   });
 
   const handleOpenEdit = (app: Application) => {
@@ -115,6 +132,8 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
     setStage(app.stage);
     setReferralStatus(app.referral_status);
     setResumeVersion(app.resume_version || '');
+    setSelectedResumeVersionId(app.resume_version_id || '');
+    setIsBackfillMode(false);
     setOaDate(app.oa_date || '');
     setInterviewDate(app.interview_date || '');
     setInterviewRound(app.interview_round || '');
@@ -137,11 +156,15 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
       return;
     }
 
-    ArgusDataService.saveApplication({
+    const appToSave: any = {
       ...selectedApp,
       stage,
       referral_status: referralStatus,
       resume_version: resumeVersion,
+      resume_version_id: selectedResumeVersionId ? Number(selectedResumeVersionId) : selectedApp.resume_version_id,
+      backfill: isBackfillMode,
+      applied_at: selectedApp.applied_at || (stage !== 'interested' ? new Date().toISOString() : null),
+      ats_score_at_apply: selectedApp.ats_score_at_apply ?? null,
       oa_date: oaDate || null,
       interview_date: interviewDate || null,
       interview_round: interviewRound,
@@ -152,7 +175,9 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
       visibility,
       author_display_mode: authorDisplayMode,
       confidentiality_ack: confidentialityAck
-    });
+    };
+
+    ArgusDataService.saveApplication(appToSave);
 
     if (selectedApp.posting?.company_id) {
       try {
@@ -286,17 +311,37 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
           ))}
         </div>
 
-        {/* Search */}
-        <div style={{ position: 'relative', minWidth: '240px' }}>
-          <Search size={14} color="var(--gray-400)" style={{ position: 'absolute', left: '10px', top: '9px' }} />
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Search company, questions, notes..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ paddingLeft: '32px', fontSize: '12.5px', height: '32px' }}
-          />
+        {/* Controls: Resume Filter & Search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <FileText size={14} color="var(--gray-500)" />
+            <select
+              className="form-select"
+              value={resumeFilter}
+              onChange={e => setResumeFilter(e.target.value)}
+              style={{ fontSize: '12px', height: '32px', minWidth: '160px', padding: '4px 8px' }}
+              title="Filter applications by submitted resume version"
+            >
+              <option value="all">All Resumes ({totalCount})</option>
+              {resumesList.map(r => (
+                <option key={r.id} value={String(r.id)}>
+                  {r.label || r.file_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ position: 'relative', minWidth: '220px' }}>
+            <Search size={14} color="var(--gray-400)" style={{ position: 'absolute', left: '10px', top: '9px' }} />
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Search company, notes..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: '32px', fontSize: '12.5px', height: '32px' }}
+            />
+          </div>
         </div>
       </div>
 
@@ -433,9 +478,55 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                   paddingTop: '10px',
                   marginTop: '2px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: 'var(--gray-500)' }}>
-                    {app.resume_version && (
-                      <span><strong>Resume:</strong> {app.resume_version}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: 'var(--gray-500)', flexWrap: 'wrap' }}>
+                    {(app.resume_version || app.resume_file_name || app.resume_version_id) && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <FileText size={13} color="var(--primary)" />
+                        <strong>Resume:</strong>
+                        <span style={{
+                          background: 'rgba(173, 40, 49, 0.08)',
+                          color: 'var(--primary)',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          {app.resume_version || app.resume_file_name || `Version #${app.resume_version_id}`}
+                        </span>
+                        {app.resume_version_id && (
+                          <a
+                            href={ArgusDataService.getResumeDownloadUrl(app.resume_version_id)}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            title="Download pinned submission resume"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              color: 'var(--gray-600)',
+                              marginLeft: '2px',
+                              textDecoration: 'none'
+                            }}
+                          >
+                            <Download size={13} />
+                          </a>
+                        )}
+                      </span>
+                    )}
+                    {app.applied_at && (
+                      <span><strong>Submitted:</strong> {new Date(app.applied_at).toLocaleDateString()}</span>
+                    )}
+                    {app.ats_score_at_apply != null && (
+                      <span style={{
+                        background: '#f0fdf4',
+                        color: '#15803d',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontWeight: 700
+                      }}>
+                        ATS Est. {app.ats_score_at_apply}%
+                      </span>
                     )}
                     {app.referral_status !== 'none' && (
                       <span><strong>Referral:</strong> {app.referral_status}</span>
@@ -601,17 +692,90 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                   </div>
                 )}
 
-                {/* Meta details grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', width: '100%' }}>
+                {/* Pinned Resume or Selection */}
+                {selectedApp?.resume_version_id && !isBackfillMode ? (
+                  <div style={{
+                    padding: '10px 14px',
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 'var(--border-radius-sm)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Lock size={15} color="#475569" />
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
+                          Pinned Resume: {selectedApp.resume_version || selectedApp.resume_file_name || `Version #${selectedApp.resume_version_id}`}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          {selectedApp.applied_at ? `Submitted on ${new Date(selectedApp.applied_at).toLocaleDateString()}` : 'Locked submission record'}
+                          {selectedApp.ats_score_at_apply != null ? ` • ATS: ${selectedApp.ats_score_at_apply}%` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <a
+                        href={ArgusDataService.getResumeDownloadUrl(selectedApp.resume_version_id)}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="btn-secondary btn-sm"
+                        style={{ fontSize: '11.5px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Download size={12} />
+                        <span>PDF</span>
+                      </a>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
+                        onClick={() => setIsBackfillMode(true)}
+                      >
+                        Backfill
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                   <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', margin: 0 }}>Resume Version Used</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', margin: 0 }}>
+                        Resume Version {isBackfillMode && <span style={{ color: '#b45309' }}>(Backfilling)</span>}
+                      </label>
+                      {isBackfillMode && (
+                        <button
+                          type="button"
+                          onClick={() => setIsBackfillMode(false)}
+                          style={{ border: 'none', background: 'transparent', color: 'var(--gray-500)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Cancel backfill
+                        </button>
+                      )}
+                    </div>
                     <select
                       className="form-select"
-                      value={resumeVersion}
-                      onChange={e => setResumeVersion(e.target.value)}
+                      value={selectedResumeVersionId ? String(selectedResumeVersionId) : (resumeVersion || '')}
+                      onChange={e => {
+                        const val = e.target.value;
+                        const found = resumesList.find(r => String(r.id) === val);
+                        if (found) {
+                          setSelectedResumeVersionId(found.id);
+                          setResumeVersion(found.label || found.file_name);
+                        } else {
+                          setSelectedResumeVersionId('');
+                          setResumeVersion(val);
+                        }
+                      }}
                       style={{ fontSize: '12.5px', width: '100%', boxSizing: 'border-box' }}
+                      required={stage !== 'interested'}
                     >
                       <option value="">Select Resume Version...</option>
+                      {resumesList.map(r => (
+                        <option key={r.id} value={String(r.id)}>
+                          {r.label || r.file_name} {r.file_size ? `(${r.file_size})` : ''}
+                        </option>
+                      ))}
                       {(currentUser.resumes || []).map(r => (
                         <option key={r.id} value={r.name}>{r.name}</option>
                       ))}
@@ -619,7 +783,10 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({
                       <option value="General Software Engineering">General Software Engineering</option>
                     </select>
                   </div>
+                )}
 
+                {/* Meta details grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', width: '100%' }}>
                   <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', margin: 0 }}>Referral Status</label>
                     <select

@@ -653,34 +653,124 @@ class DatabaseManager:
         oa_date: Optional[str] = None,
         referral_status: Optional[str] = "none",
         resume_version: Optional[str] = None,
+        resume_version_id: Optional[int] = None,
+        ats_score_at_apply: Optional[int] = None,
+        applied_at: Optional[str] = None,
+        backfill: bool = False,
     ) -> Dict[str, Any]:
-        """Upserts an application tracking record for a job posting."""
+        """Upserts an application tracking record with immutable resume pinning.
+
+        Immutability guarantees:
+        - When an application is in applied/interview stages, once a resume_version_id is pinned,
+          future updates (notes, stage, dates) preserve the original resume_version_id, applied_at,
+          and ats_score_at_apply unless backfill=True.
+        - Backfilling is allowed for historical unpinned records.
+        """
         clean_stage = stage.lower()
         clean_referral = (referral_status or "none").lower()
+        is_applied_stage = clean_stage in (
+            "applied", "oa", "phone_screen", "technical_interview", "onsite", "offer"
+        )
+
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO applications (posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                    ON CONFLICT (posting_id) DO UPDATE
-                    SET stage = EXCLUDED.stage,
-                        notes = COALESCE(EXCLUDED.notes, applications.notes),
-                        oa_date = COALESCE(EXCLUDED.oa_date, applications.oa_date),
-                        referral_status = COALESCE(EXCLUDED.referral_status, applications.referral_status),
-                        resume_version = COALESCE(EXCLUDED.resume_version, applications.resume_version),
-                        updated_at = NOW()
-                    RETURNING id, posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at;
-                    """,
-                    (posting_id, clean_stage, notes, oa_date if oa_date else None, clean_referral, resume_version),
-                )
+                # Check for existing record
+                cur.execute("SELECT * FROM applications WHERE posting_id = %s;", (posting_id,))
+                existing = cur.fetchone()
+
+                # Sync label from resume_versions table if ID provided
+                version_label = resume_version
+                if resume_version_id and not version_label:
+                    cur.execute("SELECT label, file_name FROM resume_versions WHERE id = %s;", (resume_version_id,))
+                    rv = cur.fetchone()
+                    if rv:
+                        version_label = rv.get("label") or rv.get("file_name")
+
+                if existing:
+                    # Immutability: preserve existing pinned version unless backfill=True
+                    existing_pinned_id = existing.get("resume_version_id")
+                    if existing_pinned_id is not None and not backfill:
+                        final_resume_id = existing_pinned_id
+                        final_applied_at = existing.get("applied_at")
+                        final_ats_score = existing.get("ats_score_at_apply")
+                        final_resume_label = existing.get("resume_version")
+                    else:
+                        final_resume_id = resume_version_id if resume_version_id is not None else existing.get("resume_version_id")
+                        final_applied_at = applied_at or existing.get("applied_at")
+                        final_ats_score = ats_score_at_apply if ats_score_at_apply is not None else existing.get("ats_score_at_apply")
+                        final_resume_label = version_label or existing.get("resume_version")
+
+                    cur.execute(
+                        """
+                        UPDATE applications
+                        SET stage = %s,
+                            notes = COALESCE(%s, applications.notes),
+                            oa_date = COALESCE(%s, applications.oa_date),
+                            referral_status = COALESCE(%s, applications.referral_status),
+                            resume_version = %s,
+                            resume_version_id = %s,
+                            applied_at = COALESCE(applications.applied_at, CASE WHEN %s THEN NOW() ELSE NULL END),
+                            ats_score_at_apply = %s,
+                            updated_at = NOW()
+                        WHERE posting_id = %s
+                        RETURNING id, posting_id, stage, notes, oa_date, referral_status, 
+                                  resume_version, resume_version_id, applied_at, ats_score_at_apply, updated_at;
+                        """,
+                        (
+                            clean_stage,
+                            notes,
+                            oa_date if oa_date else None,
+                            clean_referral,
+                            final_resume_label,
+                            final_resume_id,
+                            is_applied_stage,
+                            final_ats_score,
+                            posting_id,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO applications (
+                            posting_id, stage, notes, oa_date, referral_status, 
+                            resume_version, resume_version_id, applied_at, ats_score_at_apply, updated_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, 
+                            CASE WHEN %s THEN NOW() ELSE NULL END, 
+                            %s, NOW()
+                        )
+                        RETURNING id, posting_id, stage, notes, oa_date, referral_status, 
+                                  resume_version, resume_version_id, applied_at, ats_score_at_apply, updated_at;
+                        """,
+                        (
+                            posting_id,
+                            clean_stage,
+                            notes,
+                            oa_date if oa_date else None,
+                            clean_referral,
+                            version_label,
+                            resume_version_id,
+                            is_applied_stage,
+                            ats_score_at_apply,
+                        ),
+                    )
+
                 row = cur.fetchone()
-                if clean_stage in ("applied", "oa", "technical_interview", "offer"):
+                if is_applied_stage:
                     cur.execute("UPDATE postings SET status = 'applied', updated_at = NOW() WHERE id = %s;", (posting_id,))
                 elif clean_stage in ("rejected", "withdrawn"):
                     cur.execute("UPDATE postings SET status = 'closed', updated_at = NOW() WHERE id = %s;", (posting_id,))
             conn.commit()
-        return dict(row) if row else {}
+
+        item = dict(row) if row else {}
+        if item.get("oa_date"):
+            item["oa_date"] = str(item["oa_date"])
+        if item.get("applied_at"):
+            item["applied_at"] = str(item["applied_at"])
+        if item.get("updated_at"):
+            item["updated_at"] = str(item["updated_at"])
+        return item
 
     def create_user(self, name: str, email: str) -> Dict[str, Any]:
         """Inserts or activates a verified user in the users table after successful OTP verification."""
@@ -916,40 +1006,6 @@ class DatabaseManager:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
                 return [dict(r) for r in cur.fetchall()]
-
-    def update_application_status(
-        self,
-        posting_id: int,
-        stage: str,
-        notes: Optional[str] = None,
-        oa_date: Optional[str] = None,
-        referral_status: Optional[str] = None,
-        resume_version: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Creates or updates application tracking details for a posting."""
-        with self.get_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO applications (posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                    ON CONFLICT (posting_id) DO UPDATE
-                    SET stage = EXCLUDED.stage,
-                        notes = COALESCE(EXCLUDED.notes, applications.notes),
-                        oa_date = COALESCE(EXCLUDED.oa_date, applications.oa_date),
-                        referral_status = COALESCE(EXCLUDED.referral_status, applications.referral_status),
-                        resume_version = COALESCE(EXCLUDED.resume_version, applications.resume_version),
-                        updated_at = NOW()
-                    RETURNING id, posting_id, stage, notes, oa_date, referral_status, resume_version, updated_at;
-                    """,
-                    (posting_id, stage, notes, oa_date, referral_status, resume_version),
-                )
-                row = cur.fetchone()
-                # Also synchronize posting status if applied
-                if stage in ("applied", "oa", "phone_screen", "technical_interview", "onsite", "offer"):
-                    cur.execute("UPDATE postings SET status = 'applied', updated_at = NOW() WHERE id = %s;", (posting_id,))
-            conn.commit()
-        return dict(row)
 
     def get_application_by_posting_id(self, posting_id: int) -> Optional[Dict[str, Any]]:
         """Retrieves tracking information for an applied posting."""
