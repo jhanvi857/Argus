@@ -1,7 +1,8 @@
 import os
 import logging
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form, Query
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
@@ -817,6 +818,116 @@ def fetch_company_external_prep(company_id: int):
         "fetched_count": res.get("count", 0),
         "items": res.get("items", []),
     }
+
+
+# =============================================================================
+# Resume Library Endpoints
+# =============================================================================
+
+class UpdateResumeLabelRequest(BaseModel):
+    label: str
+
+
+class ArchiveResumeRequest(BaseModel):
+    is_archived: bool = True
+
+
+@app.post("/resumes/upload")
+async def upload_resume(
+    file: UploadFile = File(...),
+    label: Optional[str] = Form(None),
+    update_label: Optional[bool] = Form(False),
+):
+    """Uploads, validates, deduplicates, and extracts text from a PDF or DOCX resume."""
+    from src.services.resume_service import process_resume_upload, ResumeValidationError
+    from src.db.db_manager import DatabaseManager
+
+    try:
+        content = await file.read()
+        db = DatabaseManager()
+        result = process_resume_upload(
+            file_bytes=content,
+            original_filename=file.filename or "resume.pdf",
+            label=label,
+            update_label_if_exists=bool(update_label),
+            db_manager=db,
+        )
+        return {"status": "ok", "resume": result}
+    except ResumeValidationError as rve:
+        raise HTTPException(status_code=400, detail=str(rve))
+    except Exception as exc:
+        logger.error(f"Failed to process resume upload: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to process resume: {str(exc)}")
+
+
+@app.get("/resumes")
+def list_resumes(include_archived: bool = Query(False)):
+    """Lists all stored resume versions."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    try:
+        resumes = db.list_resume_versions(include_archived=include_archived)
+        return {"status": "ok", "count": len(resumes), "resumes": resumes}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/resumes/{resume_id}")
+def get_resume(resume_id: int):
+    """Retrieves full resume version details including extracted text."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    resume = db.get_resume_version_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+    return {"status": "ok", "resume": resume}
+
+
+@app.get("/resumes/{resume_id}/download")
+def download_resume(resume_id: int):
+    """Downloads original resume file safely with sanitized filename."""
+    from src.db.db_manager import DatabaseManager
+    from src.services.resume_service import sanitize_display_filename
+    from pathlib import Path
+
+    db = DatabaseManager()
+    resume = db.get_resume_version_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+
+    file_path = Path(resume["file_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Resume file missing from storage.")
+
+    safe_filename = sanitize_display_filename(resume.get("file_name", "resume.pdf"))
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_filename,
+        media_type=resume.get("mime_type", "application/octet-stream"),
+    )
+
+
+@app.patch("/resumes/{resume_id}/archive")
+def archive_resume(resume_id: int, req: ArchiveResumeRequest):
+    """Archives or unarchives a resume version."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    updated = db.archive_resume_version(resume_id, is_archived=req.is_archived)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+    return {"status": "ok", "resume": updated}
+
+
+@app.patch("/resumes/{resume_id}/label")
+def update_resume_label(resume_id: int, req: UpdateResumeLabelRequest):
+    """Updates the label of a resume version."""
+    from src.db.db_manager import DatabaseManager
+    db = DatabaseManager()
+    updated = db.update_resume_version_label(resume_id, label=req.label.strip())
+    if not updated:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+    return {"status": "ok", "resume": updated}
+
 
 
 

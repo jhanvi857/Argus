@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   Upload, 
-  Trash2, 
   Download, 
   Eye, 
-  Edit3, 
+  Archive, 
+  RotateCcw,
   Check, 
   X,
-  FileCheck2
+  AlertCircle,
+  FileCheck2,
+  Hash,
+  Clock,
+  HardDrive
 } from 'lucide-react';
 import { ResumeVersion, UserProfile } from '../../types';
 import { ArgusDataService } from '../../services/api';
@@ -22,255 +26,433 @@ export const ResumesView: React.FC<ResumesViewProps> = ({
   currentUser,
   onRefresh
 }) => {
+  const [resumes, setResumes] = useState<ResumeVersion[]>(currentUser.resumes || []);
+  const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [previewResume, setPreviewResume] = useState<ResumeVersion | null>(null);
-  const [editingResume, setEditingResume] = useState<ResumeVersion | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
-  const [name, setName] = useState('');
-  const [fileName, setFileName] = useState('');
-  const [roleFocus, setRoleFocus] = useState('');
-  const [previewText, setPreviewText] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
+  // Upload Form State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [label, setLabel] = useState('');
+  const [updateLabelIfExists, setUpdateLabelIfExists] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
-  const resumes = currentUser.resumes || [];
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleOpenAdd = () => {
-    setEditingResume(null);
-    setName('Backend & Infrastructure Resume');
-    setFileName(`${currentUser.full_name?.replace(' ', '_') || 'Candidate'}_Backend_v1.pdf`);
-    setRoleFocus('Backend, Systems, Distributed Systems');
-    setPreviewText(`${currentUser.full_name} | Software Engineer | ${currentUser.headline}\nProjects: ${currentUser.projects?.map(p => p.name).join(', ') || 'NioFlow, Evora'}\nSkills: ${currentUser.skills?.slice(0, 8).map(s => s.name).join(', ') || 'Go, Java, Rust'}`);
-    setIsDefault(resumes.length === 0);
+  const loadResumes = async (archived = showArchived) => {
+    setLoading(true);
+    try {
+      const serverList = await ArgusDataService.fetchResumes(archived);
+      setResumes(serverList);
+    } catch (e) {
+      console.error('Failed to load resumes:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadResumes();
+  }, [showArchived]);
+
+  const handleOpenUpload = () => {
+    setSelectedFile(null);
+    setLabel('');
+    setUploadError(null);
+    setUploadSuccess(null);
+    setUpdateLabelIfExists(true);
     setModalOpen(true);
   };
 
-  const handleOpenEdit = (res: ResumeVersion) => {
-    setEditingResume(res);
-    setName(res.name);
-    setFileName(res.file_name);
-    setRoleFocus(res.role_focus);
-    setPreviewText(res.preview_text || '');
-    setIsDefault(!!res.is_default);
-    setModalOpen(true);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setUploadError(null);
+      if (!label.trim()) {
+        const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[_\-]+/g, ' ');
+        setLabel(baseName.charAt(0).toUpperCase() + baseName.slice(1));
+      }
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Delete this resume version?')) {
-      ArgusDataService.deleteResume(id);
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      setUploadError('Please select a PDF or DOCX file to upload.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    try {
+      const res = await ArgusDataService.uploadResumeFile(
+        selectedFile,
+        label.trim() || undefined,
+        updateLabelIfExists
+      );
+
+      setUploadSuccess(
+        res.is_duplicate 
+          ? (res.message || 'Identical resume already indexed. Updated existing record.') 
+          : 'Resume uploaded, validated, and indexed successfully!'
+      );
+
+      setTimeout(() => {
+        setModalOpen(false);
+        loadResumes();
+        onRefresh();
+      }, 1000);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload and validate resume document.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleArchiveToggle = async (id: number | string, currentArchived: boolean) => {
+    const action = currentArchived ? 'restore' : 'archive';
+    if (confirm(`Are you sure you want to ${action} this resume version?`)) {
+      await ArgusDataService.archiveResumeVersion(id, !currentArchived);
+      loadResumes();
       onRefresh();
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !fileName.trim()) return;
-
-    const resumeData: ResumeVersion = {
-      id: editingResume ? editingResume.id : `res-${Date.now()}`,
-      name: name.trim(),
-      file_name: fileName.trim().endsWith('.pdf') ? fileName.trim() : `${fileName.trim()}.pdf`,
-      role_focus: roleFocus.trim() || 'General SWE',
-      last_updated: new Date().toISOString().split('T')[0],
-      applications_count: editingResume ? editingResume.applications_count : 0,
-      file_size: '142 KB',
-      is_default: isDefault,
-      preview_text: previewText.trim()
-    };
-
-    ArgusDataService.saveResume(resumeData);
-    setModalOpen(false);
-    onRefresh();
+  const handleDownload = (id: number | string, filename: string) => {
+    const url = ArgusDataService.getResumeDownloadUrl(id);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
+
+  const activeResumes = resumes.filter(r => showArchived ? true : !r.is_archived);
 
   return (
     <div>
       <div className="page-header-container">
         <div>
-          <h1 className="page-title">Resume Versions</h1>
+          <h1 className="page-title">Resume Library</h1>
           <p className="page-subtitle">
-            Keep specialized resume versions tailored for different role focuses (e.g. Low-Latency Systems vs. General SWE).
+            Upload and manage your immutable resume versions (PDF / DOCX). Argus extracts text, computes ATS fit, and pins versions to submitted applications.
           </p>
         </div>
 
-        <button className="btn-primary" onClick={handleOpenAdd}>
-          <Upload size={15} />
-          <span>Add Resume Version</span>
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button 
+            className={`btn-ghost btn-sm ${showArchived ? 'active' : ''}`}
+            onClick={() => setShowArchived(!showArchived)}
+            style={{ fontSize: '13px' }}
+          >
+            {showArchived ? 'Show Active Only' : 'Include Archived'}
+          </button>
+
+          <button className="btn-primary" onClick={handleOpenUpload}>
+            <Upload size={15} />
+            <span>Upload Resume Version</span>
+          </button>
+        </div>
       </div>
 
-      {resumes.length === 0 ? (
+      {loading && resumes.length === 0 ? (
+        <div className="card-surface" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--gray-500)' }}>
+          Loading resume library...
+        </div>
+      ) : activeResumes.length === 0 ? (
         <div className="card-surface" style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <FileText size={40} color="var(--gray-400)" style={{ margin: '0 auto 12px' }} />
+          <FileText size={42} color="var(--gray-400)" style={{ margin: '0 auto 12px' }} />
           <h3 style={{ fontSize: '17px', fontWeight: 700, color: 'var(--primary-navy)', marginBottom: '6px' }}>
-            No resume versions registered.
+            No resume versions registered yet.
           </h3>
-          <p style={{ fontSize: '14px', color: 'var(--gray-600)', maxWidth: '420px', margin: '0 auto 18px' }}>
-            Add your resume versions so Argus can recommend which one best covers the capabilities required by each role.
+          <p style={{ fontSize: '14px', color: 'var(--gray-600)', maxWidth: '440px', margin: '0 auto 18px', lineHeight: 1.5 }}>
+            Upload your SWE resume versions (PDF or DOCX, max 5 pages). Argus will index them with tamper-proof SHA-256 hashes for ATS matching and application tracking.
           </p>
-          <button className="btn-primary btn-sm" onClick={handleOpenAdd}>
+          <button className="btn-primary btn-sm" onClick={handleOpenUpload}>
             <Upload size={14} />
             <span>Upload First Resume</span>
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
-          {resumes.map(res => (
-            <div key={res.id} className="card-surface" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '16px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--primary-navy)' }}>
-                        {res.name}
-                      </h3>
-                      {res.is_default && (
-                        <span className="badge-tag-navy" style={{ fontSize: '10.5px' }}>
-                          DEFAULT
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
+          {activeResumes.map(res => {
+            const displayName = res.label || res.name || res.file_name;
+            const fileSizeStr = typeof res.file_size === 'number' 
+              ? `${Math.round(res.file_size / 1024)} KB` 
+              : (res.file_size || 'PDF Document');
+            const dateStr = res.created_at ? new Date(res.created_at).toLocaleDateString() : res.last_updated;
+
+            return (
+              <div 
+                key={res.id} 
+                className="card-surface" 
+                style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  justifyContent: 'space-between', 
+                  gap: '16px',
+                  opacity: res.is_archived ? 0.65 : 1,
+                  border: res.is_archived ? '1px dashed var(--gray-300)' : undefined
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ flex: 1, paddingRight: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary-navy)', margin: 0 }}>
+                          {displayName}
+                        </h3>
+                        {res.is_archived && (
+                          <span className="badge-tag-navy" style={{ fontSize: '10px', background: 'var(--gray-200)', color: 'var(--gray-700)' }}>
+                            ARCHIVED
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '12px', color: 'var(--gray-500)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} />
+                          {dateStr}
                         </span>
-                      )}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <HardDrive size={12} />
+                          {fileSizeStr}
+                        </span>
+                        {res.file_hash && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-mono)', fontSize: '11px' }} title={`SHA-256: ${res.file_hash}`}>
+                            <Hash size={11} />
+                            {res.file_hash.slice(0, 8)}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div style={{ fontSize: '12px', color: 'var(--gray-500)', marginTop: '2px' }}>
-                      Updated {res.last_updated} • {res.file_size || '140 KB'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button 
+                        className="btn-ghost btn-sm" 
+                        onClick={() => handleArchiveToggle(res.id, !!res.is_archived)} 
+                        style={{ padding: '6px' }} 
+                        title={res.is_archived ? "Restore Resume Version" : "Archive Resume Version"}
+                      >
+                        {res.is_archived ? <RotateCcw size={14} color="var(--primary)" /> : <Archive size={14} color="var(--gray-500)" />}
+                      </button>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button className="btn-ghost btn-sm" onClick={() => handleOpenEdit(res)} style={{ padding: '4px' }} title="Edit Resume">
-                      <Edit3 size={15} />
-                    </button>
-                    <button className="btn-ghost btn-sm" onClick={() => handleDelete(res.id)} style={{ padding: '4px', color: 'var(--accent-crimson)' }} title="Delete Resume">
-                      <Trash2 size={15} />
-                    </button>
+                  {/* Metadata & File details */}
+                  <div style={{
+                    padding: '10px 12px',
+                    backgroundColor: 'var(--gray-50)',
+                    borderRadius: 'var(--border-radius-sm)',
+                    border: '1px solid var(--gray-200)',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
+                      Safe Filename & Source
+                    </div>
+                    <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--gray-800)', marginTop: '2px', wordBreak: 'break-all' }}>
+                      {res.file_name}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '12px', color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileCheck2 size={14} color="var(--color-success)" />
+                    <span>
+                      Text Extracted: <strong>{(res.extracted_text || res.preview_text || '').length}</strong> characters
+                    </span>
                   </div>
                 </div>
 
-                <div style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'var(--gray-50)',
-                  borderRadius: 'var(--border-radius-sm)',
-                  border: '1px solid var(--gray-200)',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
-                    Role Focus
-                  </div>
-                  <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--gray-800)', marginTop: '2px' }}>
-                    {res.role_focus}
-                  </div>
-                </div>
+                {/* Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid var(--gray-150)', paddingTop: '12px' }}>
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={() => setPreviewResume(res)}
+                    style={{ flex: 1 }}
+                  >
+                    <Eye size={13} />
+                    <span>Preview Text</span>
+                  </button>
 
-                <div style={{ fontSize: '12.5px', color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <FileCheck2 size={15} color="var(--color-success)" />
-                  <span>Used in <strong>{res.applications_count}</strong> active applications</span>
+                  <button
+                    className="btn-primary btn-sm"
+                    onClick={() => handleDownload(res.id, res.file_name)}
+                    title="Download Original File"
+                    style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Download size={13} />
+                    <span>Download</span>
+                  </button>
                 </div>
               </div>
-
-              {/* Actions */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid var(--gray-150)', paddingTop: '12px' }}>
-                <button
-                  className="btn-secondary btn-sm"
-                  onClick={() => setPreviewResume(res)}
-                  style={{ flex: 1 }}
-                >
-                  <Eye size={13} />
-                  <span>Preview Resume</span>
-                </button>
-
-                <button
-                  className="btn-ghost btn-sm"
-                  onClick={() => alert(`Simulating download for ${res.file_name}`)}
-                  title="Download PDF"
-                  style={{ padding: '6px 10px' }}
-                >
-                  <Download size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Add / Edit Modal */}
+      {/* Upload Modal */}
       {modalOpen && (
-        <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-          <div className="modal-container" style={{ maxWidth: '580px' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => !uploading && setModalOpen(false)}>
+          <div className="modal-container" style={{ maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--primary-navy)' }}>
-                {editingResume ? 'Edit Resume Version' : 'Upload / Add Resume Version'}
+                Upload Resume Version
               </h2>
-              <button className="btn-ghost btn-sm" onClick={() => setModalOpen(false)} style={{ padding: '4px' }}>
+              <button 
+                className="btn-ghost btn-sm" 
+                onClick={() => !uploading && setModalOpen(false)} 
+                disabled={uploading}
+                style={{ padding: '4px' }}
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSave}>
+            <form onSubmit={handleUploadSubmit}>
               <div className="modal-body">
+                {uploadError && (
+                  <div style={{
+                    padding: '10px 14px',
+                    backgroundColor: '#fee2e2',
+                    border: '1px solid #fca5a5',
+                    borderRadius: 'var(--border-radius-sm)',
+                    color: '#991b1b',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '14px'
+                  }}>
+                    <AlertCircle size={16} />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+
+                {uploadSuccess && (
+                  <div style={{
+                    padding: '10px 14px',
+                    backgroundColor: '#dcfce7',
+                    border: '1px solid #86efac',
+                    borderRadius: 'var(--border-radius-sm)',
+                    color: '#166534',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '14px'
+                  }}>
+                    <Check size={16} />
+                    <span>{uploadSuccess}</span>
+                  </div>
+                )}
+
+                {/* Dropzone / File Picker */}
+                <div 
+                  style={{
+                    border: '2px dashed var(--gray-300)',
+                    borderRadius: 'var(--border-radius-md)',
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    backgroundColor: selectedFile ? 'rgba(173,40,49,0.03)' : 'var(--gray-50)',
+                    cursor: 'pointer',
+                    marginBottom: '16px'
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    style={{ display: 'none' }}
+                  />
+
+                  <Upload size={32} color={selectedFile ? "var(--primary)" : "var(--gray-400)"} style={{ margin: '0 auto 8px' }} />
+
+                  {selectedFile ? (
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--primary-navy)', fontSize: '14px' }}>
+                        {selectedFile.name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--gray-500)', marginTop: '2px' }}>
+                        {(selectedFile.size / 1024).toFixed(1)} KB • Click to change file
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 600, color: 'var(--gray-800)', fontSize: '14px' }}>
+                        Click to browse or drop your resume here
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--gray-500)', marginTop: '4px' }}>
+                        PDF or DOCX • Max 5 pages • Up to 5 MB
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="form-group">
-                  <label className="form-label">Resume Name *</label>
+                  <label className="form-label">Version Label / Role Focus *</label>
                   <input
                     type="text"
                     className="form-input"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="e.g. Backend & Infrastructure v3"
+                    value={label}
+                    onChange={e => setLabel(e.target.value)}
+                    placeholder="e.g. Systems & Low-Latency v2"
                     required
                   />
+                  <span style={{ fontSize: '11px', color: 'var(--gray-500)', marginTop: '4px', display: 'block' }}>
+                    Label used in ATS scoring and when selecting which resume to pin to an application.
+                  </span>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">File Name (PDF) *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={fileName}
-                    onChange={e => setFileName(e.target.value)}
-                    placeholder="Alex_Chen_Backend_v3.pdf"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Target Role Focus</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={roleFocus}
-                    onChange={e => setRoleFocus(e.target.value)}
-                    placeholder="e.g. Low-Latency Systems, Go, Java, Raft, eBPF"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Resume Text / Content Preview (for matcher ranking)</label>
-                  <textarea
-                    className="form-textarea"
-                    value={previewText}
-                    onChange={e => setPreviewText(e.target.value)}
-                    placeholder="Paste the core summary or highlights of this resume version..."
-                  />
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
                   <input
                     type="checkbox"
-                    id="isDefault"
-                    checked={isDefault}
-                    onChange={e => setIsDefault(e.target.checked)}
-                    style={{ accentColor: 'var(--primary-navy)' }}
+                    id="updateLabelIfExists"
+                    checked={updateLabelIfExists}
+                    onChange={e => setUpdateLabelIfExists(e.target.checked)}
+                    style={{ accentColor: 'var(--primary)' }}
                   />
-                  <label htmlFor="isDefault" style={{ fontSize: '13px', color: 'var(--gray-800)', cursor: 'pointer' }}>
-                    Set as default recommended resume
+                  <label htmlFor="updateLabelIfExists" style={{ fontSize: '12.5px', color: 'var(--gray-700)', cursor: 'pointer' }}>
+                    If an identical resume file is already uploaded, update its label instead of failing
                   </label>
+                </div>
+
+                <div style={{
+                  marginTop: '16px',
+                  padding: '10px 12px',
+                  backgroundColor: 'var(--gray-100)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  fontSize: '11.5px',
+                  color: 'var(--gray-600)',
+                  lineHeight: 1.4
+                }}>
+                  🔒 <strong>Untrusted file protection</strong>: Magic bytes are verified, DOCX zip-bomb decompression is strictly capped, original filenames are never used in storage paths, and files are stored outside the web root.
                 </div>
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setModalOpen(false)}
+                  disabled={uploading}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  <span>Save Resume Version</span>
+                <button 
+                  type="submit" 
+                  className="btn-primary"
+                  disabled={uploading || !selectedFile}
+                >
+                  {uploading ? <span>Validating & Uploading...</span> : <span>Upload & Extract</span>}
                   <Check size={14} />
                 </button>
               </div>
@@ -279,17 +461,17 @@ export const ResumesView: React.FC<ResumesViewProps> = ({
         </div>
       )}
 
-      {/* Preview Resume Modal */}
+      {/* Preview Extracted Text Modal */}
       {previewResume && (
         <div className="modal-overlay" onClick={() => setPreviewResume(null)}>
-          <div className="modal-container" style={{ maxWidth: '640px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-container" style={{ maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary-navy)' }}>
-                  {previewResume.name}
+                  {previewResume.label || previewResume.name}
                 </h3>
                 <div style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
-                  {previewResume.file_name} • Focus: {previewResume.role_focus}
+                  {previewResume.file_name} • {(previewResume.extracted_text || previewResume.preview_text || '').length} characters extracted
                 </div>
               </div>
               <button className="btn-ghost btn-sm" onClick={() => setPreviewResume(null)}>
@@ -302,18 +484,28 @@ export const ResumesView: React.FC<ResumesViewProps> = ({
                 backgroundColor: 'var(--gray-50)',
                 border: '1px solid var(--gray-200)',
                 borderRadius: 'var(--border-radius-sm)',
-                padding: '20px',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '13px',
+                padding: '18px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '12px',
                 lineHeight: 1.6,
                 color: 'var(--gray-800)',
-                whiteSpace: 'pre-line'
+                whiteSpace: 'pre-wrap',
+                maxHeight: '440px',
+                overflowY: 'auto'
               }}>
-                {previewResume.preview_text || 'No text preview provided for this PDF version.'}
+                {previewResume.extracted_text || previewResume.preview_text || 'No text extracted for this resume version.'}
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+              <button 
+                className="btn-primary btn-sm"
+                onClick={() => handleDownload(previewResume.id, previewResume.file_name)}
+              >
+                <Download size={13} />
+                <span>Download Original File</span>
+              </button>
+
               <button className="btn-secondary" onClick={() => setPreviewResume(null)}>
                 Close Preview
               </button>

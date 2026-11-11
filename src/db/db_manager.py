@@ -53,6 +53,9 @@ class DatabaseManager:
             with conn.cursor() as cur:
                 cur.execute(sql)
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';")
+                cur.execute("ALTER TABLE applications ADD COLUMN IF NOT EXISTS resume_version_id INTEGER REFERENCES resume_versions(id) ON DELETE RESTRICT;")
+                cur.execute("ALTER TABLE applications ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE applications ADD COLUMN IF NOT EXISTS ats_score_at_apply INTEGER;")
             conn.commit()
         return True
 
@@ -1202,6 +1205,136 @@ class DatabaseManager:
                         item["created_at"] = str(item["created_at"])
                     results.append(item)
                 return results
+
+    # =========================================================================
+    # Resume Versions Management
+    # =========================================================================
+
+    def create_resume_version(
+        self,
+        file_name: str,
+        file_path: str,
+        file_size: int,
+        file_hash: str,
+        mime_type: str,
+        label: str,
+        extracted_text: str,
+    ) -> Dict[str, Any]:
+        """Creates an immutable resume version record."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO resume_versions (
+                        file_name, file_path, file_size, file_hash, mime_type, label, extracted_text, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                    RETURNING id, file_name, file_path, file_size, file_hash, mime_type, label, extracted_text, is_archived, created_at;
+                    """,
+                    (file_name, file_path, file_size, file_hash, mime_type, label, extracted_text),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        item = dict(row)
+        if item.get("created_at"):
+            item["created_at"] = str(item["created_at"])
+        return item
+
+    def get_resume_version_by_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a resume version by its SHA-256 hash for deduplication."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM resume_versions WHERE file_hash = %s;",
+                    (file_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                item = dict(row)
+                if item.get("created_at"):
+                    item["created_at"] = str(item["created_at"])
+                return item
+
+    def get_resume_version_by_id(self, resume_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves a resume version by ID."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM resume_versions WHERE id = %s;",
+                    (resume_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                item = dict(row)
+                if item.get("created_at"):
+                    item["created_at"] = str(item["created_at"])
+                return item
+
+    def list_resume_versions(self, include_archived: bool = False) -> List[Dict[str, Any]]:
+        """Lists resume versions ordered by creation date desc."""
+        query = "SELECT id, file_name, file_size, file_hash, mime_type, label, is_archived, created_at, LENGTH(extracted_text) as text_length FROM resume_versions"
+        if not include_archived:
+            query += " WHERE is_archived = FALSE"
+        query += " ORDER BY created_at DESC;"
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+                results = []
+                for r in rows:
+                    item = dict(r)
+                    if item.get("created_at"):
+                        item["created_at"] = str(item["created_at"])
+                    results.append(item)
+                return results
+
+    def update_resume_version_label(self, resume_id: int, label: str) -> Optional[Dict[str, Any]]:
+        """Updates the label of an existing resume version."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE resume_versions
+                    SET label = %s
+                    WHERE id = %s
+                    RETURNING id, file_name, file_path, file_size, file_hash, mime_type, label, is_archived, created_at;
+                    """,
+                    (label, resume_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        if not row:
+            return None
+        item = dict(row)
+        if item.get("created_at"):
+            item["created_at"] = str(item["created_at"])
+        return item
+
+    def archive_resume_version(self, resume_id: int, is_archived: bool = True) -> Optional[Dict[str, Any]]:
+        """Archives or restores a resume version."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE resume_versions
+                    SET is_archived = %s
+                    WHERE id = %s
+                    RETURNING id, file_name, file_size, file_hash, mime_type, label, is_archived, created_at;
+                    """,
+                    (is_archived, resume_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        if not row:
+            return None
+        item = dict(row)
+        if item.get("created_at"):
+            item["created_at"] = str(item["created_at"])
+        return item
+
 
 
 

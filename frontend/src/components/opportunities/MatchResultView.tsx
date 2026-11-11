@@ -15,7 +15,7 @@ interface MatchResultViewProps {
   currentUser: UserProfile;
   onOpenPortfolio: () => void;
   onApplyAction: () => void;
-  onViewResume?: (resumeId: string) => void;
+  onViewResume?: (resumeId: string | number) => void;
 }
 
 export const MatchResultView: React.FC<MatchResultViewProps> = ({

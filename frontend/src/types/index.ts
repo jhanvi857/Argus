@@ -156,15 +156,23 @@ export interface Achievement {
 }
 
 export interface ResumeVersion {
-  id: string;
-  name: string;
+  id: number | string;
+  name?: string;
+  label?: string;
   file_name: string;
-  role_focus: string;
-  last_updated: string;
-  applications_count: number;
-  file_size?: string;
+  file_path?: string;
+  role_focus?: string;
+  last_updated?: string;
+  applications_count?: number;
+  file_size?: number | string;
+  file_hash?: string;
+  mime_type?: string;
   is_default?: boolean;
+  is_archived?: boolean;
+  extracted_text?: string;
   preview_text?: string;
+  text_length?: number;
+  created_at?: string;
 }
 
 export interface UserPreferences {
@@ -232,7 +240,7 @@ export interface MatchedAchievement {
 }
 
 export interface MatchedResume {
-  resumeId: string;
+  resumeId: string | number;
   resume: ResumeVersion;
   rationale: string;
 }

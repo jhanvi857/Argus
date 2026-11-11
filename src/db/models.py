@@ -54,15 +54,42 @@ class Match(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class ResumeVersion(BaseModel):
+    id: Optional[int] = None
+    file_name: str
+    file_path: str
+    file_size: int
+    file_hash: str
+    mime_type: str
+    label: str
+    extracted_text: str
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+
+
 class Application(BaseModel):
     id: Optional[int] = None
     posting_id: int
+    resume_version_id: Optional[int] = None
     resume_version: Optional[str] = None
+    applied_at: Optional[datetime] = None
+    ats_score_at_apply: Optional[int] = None
     oa_date: Optional[date] = None
     referral_status: str = "none"  # none | requested | referred | pending
     stage: str = "applied"  # bookmarked | applied | oa | phone_screen | technical_interview | onsite | offer | rejected | withdrawn
     notes: Optional[str] = None
     updated_at: Optional[datetime] = None
+
+
+class ATSScore(BaseModel):
+    id: Optional[int] = None
+    resume_version_id: int
+    posting_id: int
+    score: int
+    breakdown_json: Dict[str, Any] = Field(default_factory=dict)
+    resume_hash: str
+    jd_hash: str
+    created_at: Optional[datetime] = None
 
 
 class Snapshot(BaseModel):

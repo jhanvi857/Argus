@@ -64,11 +64,28 @@ CREATE TABLE IF NOT EXISTS matches (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. Applications Table: Tracking stages, OA dates, and resume variants per posting
+-- 6. Resume Versions Table: Immutable uploaded resume library (PDF/DOCX)
+CREATE TABLE IF NOT EXISTS resume_versions (
+    id SERIAL PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    file_hash VARCHAR(64) NOT NULL UNIQUE,
+    mime_type VARCHAR(100) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    extracted_text TEXT NOT NULL,
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. Applications Table: Tracking stages, OA dates, and resume variants per posting
 CREATE TABLE IF NOT EXISTS applications (
     id SERIAL PRIMARY KEY,
     posting_id INTEGER NOT NULL UNIQUE REFERENCES postings(id) ON DELETE CASCADE,
+    resume_version_id INTEGER REFERENCES resume_versions(id) ON DELETE RESTRICT,
     resume_version VARCHAR(255),
+    applied_at TIMESTAMPTZ,
+    ats_score_at_apply INTEGER,
     oa_date DATE,
     referral_status VARCHAR(50) DEFAULT 'none' CHECK (referral_status IN ('none', 'requested', 'referred', 'pending')),
     stage VARCHAR(50) DEFAULT 'applied' CHECK (stage IN ('bookmarked', 'applied', 'oa', 'phone_screen', 'technical_interview', 'onsite', 'offer', 'rejected', 'withdrawn')),
@@ -76,7 +93,7 @@ CREATE TABLE IF NOT EXISTS applications (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Users Table: Candidate account & recipient profile configuration
+-- 8. Users Table: Candidate account & recipient profile configuration
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -109,7 +126,7 @@ CREATE TABLE IF NOT EXISTS experience_logs (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. Prep Resources Table: External interview snippets pulled via Tavily (LeetCode, Blind, GfG)
+-- 10. Prep Resources Table: External interview snippets pulled via Tavily (LeetCode, Blind, GfG)
 CREATE TABLE IF NOT EXISTS prep_resources (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -122,6 +139,19 @@ CREATE TABLE IF NOT EXISTS prep_resources (
     fetched_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 11. ATS Scores Table: Cached deterministic & LLM match scores (resume x JD)
+CREATE TABLE IF NOT EXISTS ats_scores (
+    id SERIAL PRIMARY KEY,
+    resume_version_id INTEGER NOT NULL REFERENCES resume_versions(id) ON DELETE CASCADE,
+    posting_id INTEGER NOT NULL REFERENCES postings(id) ON DELETE CASCADE,
+    score INTEGER NOT NULL,
+    breakdown_json JSONB NOT NULL,
+    resume_hash VARCHAR(64) NOT NULL,
+    jd_hash VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_ats_scores_resume_jd UNIQUE (resume_hash, jd_hash)
+);
+
 -- Indexes for performance & query optimization
 CREATE INDEX IF NOT EXISTS idx_postings_company_id ON postings(company_id);
 CREATE INDEX IF NOT EXISTS idx_postings_status ON postings(status);
@@ -131,13 +161,18 @@ CREATE INDEX IF NOT EXISTS idx_postings_first_seen_at ON postings(first_seen_at 
 CREATE INDEX IF NOT EXISTS idx_snapshots_company_id ON snapshots(company_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_fetched_at ON snapshots(fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_matches_posting_id ON matches(posting_id);
+CREATE INDEX IF NOT EXISTS idx_resume_versions_hash ON resume_versions(file_hash);
+CREATE INDEX IF NOT EXISTS idx_resume_versions_archived ON resume_versions(is_archived);
 CREATE INDEX IF NOT EXISTS idx_applications_posting_id ON applications(posting_id);
+CREATE INDEX IF NOT EXISTS idx_applications_resume_version_id ON applications(resume_version_id);
 CREATE INDEX IF NOT EXISTS idx_applications_stage ON applications(stage);
 CREATE INDEX IF NOT EXISTS idx_experience_logs_company_id ON experience_logs(company_id);
 CREATE INDEX IF NOT EXISTS idx_experience_logs_visibility ON experience_logs(visibility);
 CREATE INDEX IF NOT EXISTS idx_experience_logs_author ON experience_logs(author_user_id);
 CREATE INDEX IF NOT EXISTS idx_prep_resources_company_id ON prep_resources(company_id);
 CREATE INDEX IF NOT EXISTS idx_prep_resources_stage ON prep_resources(stage);
+CREATE INDEX IF NOT EXISTS idx_ats_scores_resume_posting ON ats_scores(resume_version_id, posting_id);
+CREATE INDEX IF NOT EXISTS idx_ats_scores_hashes ON ats_scores(resume_hash, jd_hash);
 
 -- GIN Indexes for array/json matching
 CREATE INDEX IF NOT EXISTS idx_projects_tags_gin ON projects USING GIN(tags);

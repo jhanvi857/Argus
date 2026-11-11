@@ -229,16 +229,140 @@ export class ArgusDataService {
     return updated;
   }
 
-  // Resumes CRUD
+  // Resumes CRUD & Server Integration
   public static getResumes(): ResumeVersion[] {
     const user = this.getCurrentUser();
     return user?.resumes || [];
   }
 
+  public static async fetchResumes(includeArchived: boolean = false): Promise<ResumeVersion[]> {
+    try {
+      const res = await fetch(buildApiUrl(`/resumes?include_archived=${includeArchived}`));
+      if (res.ok) {
+        const data = await res.json();
+        const serverResumes: ResumeVersion[] = (data.resumes || []).map((r: any) => ({
+          ...r,
+          id: r.id,
+          name: r.label || r.file_name,
+          role_focus: r.label || 'General SWE',
+          last_updated: r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          file_size: r.file_size ? `${Math.round(r.file_size / 1024)} KB` : '142 KB',
+          preview_text: r.extracted_text || '',
+          applications_count: 0
+        }));
+        // Cache to currentUser for offline/sync fallback
+        AuthService.updateCurrentUser({ resumes: serverResumes });
+        return serverResumes;
+      }
+    } catch (e) {
+      console.warn('Backend resumes fetch error, falling back to local user profile:', e);
+    }
+    return this.getResumes();
+  }
+
+  public static async uploadResumeFile(
+    file: File,
+    label?: string,
+    updateLabel: boolean = false
+  ): Promise<{ status: string; resume: ResumeVersion; message?: string; is_duplicate?: boolean }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (label) formData.append('label', label);
+    if (updateLabel) formData.append('update_label', 'true');
+
+    const res = await fetch(buildApiUrl('/resumes/upload'), {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ detail: 'Failed to upload resume' }));
+      throw new Error(errorData.detail || 'Failed to upload resume');
+    }
+
+    const data = await res.json();
+    const uploadedResume = data.resume;
+    const formatted: ResumeVersion = {
+      ...uploadedResume,
+      id: uploadedResume.id,
+      name: uploadedResume.label || uploadedResume.file_name,
+      role_focus: uploadedResume.label || 'General SWE',
+      last_updated: uploadedResume.created_at ? uploadedResume.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+      file_size: uploadedResume.file_size ? `${Math.round(uploadedResume.file_size / 1024)} KB` : `${file.size} B`,
+      preview_text: uploadedResume.extracted_text || '',
+      applications_count: 0
+    };
+
+    // Update local profile cache
+    const existing = this.getResumes();
+    const idx = existing.findIndex(r => String(r.id) === String(formatted.id));
+    let updated: ResumeVersion[];
+    if (idx !== -1) {
+      updated = [...existing];
+      updated[idx] = formatted;
+    } else {
+      updated = [formatted, ...existing];
+    }
+    AuthService.updateCurrentUser({ resumes: updated });
+
+    return {
+      status: 'ok',
+      resume: formatted,
+      message: data.message || uploadedResume.message,
+      is_duplicate: uploadedResume.is_duplicate
+    };
+  }
+
+  public static async fetchResumeById(id: number | string): Promise<ResumeVersion | null> {
+    try {
+      const res = await fetch(buildApiUrl(`/resumes/${id}`));
+      if (res.ok) {
+        const data = await res.json();
+        const r = data.resume;
+        return {
+          ...r,
+          name: r.label || r.file_name,
+          role_focus: r.label || 'General SWE',
+          preview_text: r.extracted_text || ''
+        };
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch resume #${id} from backend:`, e);
+    }
+    const found = this.getResumes().find(r => String(r.id) === String(id));
+    return found || null;
+  }
+
+  public static async archiveResumeVersion(id: number | string, isArchived: boolean = true): Promise<boolean> {
+    try {
+      const res = await fetch(buildApiUrl(`/resumes/${id}/archive`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_archived: isArchived })
+      });
+      if (res.ok) {
+        await this.fetchResumes(true);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`Failed to archive resume #${id} on backend:`, e);
+    }
+    // Fallback local update
+    const user = this.getCurrentUser();
+    if (!user) return false;
+    const updated = (user.resumes || []).map(r => String(r.id) === String(id) ? { ...r, is_archived: isArchived } : r);
+    AuthService.updateCurrentUser({ resumes: updated });
+    return true;
+  }
+
+  public static getResumeDownloadUrl(id: number | string): string {
+    return buildApiUrl(`/resumes/${id}/download`);
+  }
+
   public static saveResume(resume: ResumeVersion): ResumeVersion[] {
     const user = this.getCurrentUser();
     if (!user) return [];
-    const existingIndex = (user.resumes || []).findIndex(r => r.id === resume.id);
+    const existingIndex = (user.resumes || []).findIndex(r => String(r.id) === String(resume.id));
     let updated: ResumeVersion[];
 
     if (existingIndex !== -1) {
@@ -254,9 +378,10 @@ export class ArgusDataService {
   }
 
   public static deleteResume(resumeId: string): ResumeVersion[] {
+    this.archiveResumeVersion(resumeId, true);
     const user = this.getCurrentUser();
     if (!user) return [];
-    const updated = (user.resumes || []).filter(r => r.id !== resumeId);
+    const updated = (user.resumes || []).filter(r => String(r.id) !== String(resumeId));
     AuthService.updateCurrentUser({ resumes: updated });
     return updated;
   }
