@@ -10,7 +10,8 @@ import {
   Check,
   MessageSquare,
   FileText,
-  Download
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import { Posting, MatchResult, UserProfile, PostingStatus, Application, ApplicationStage, ReferralStatus, ExperienceLogVisibility, AuthorDisplayMode, ResumeVersion } from '../../types';
 import { ArgusDataService } from '../../services/api';
@@ -118,7 +119,14 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isMatching, setIsMatching] = useState<boolean>(false);
   const [matchStep, setMatchStep] = useState<string>('idle');
-  const [activeModalTab, setActiveModalTab] = useState<'details' | 'experiences'>('details');
+  const [activeModalTab, setActiveModalTab] = useState<'details' | 'ats_fit' | 'experiences'>('details');
+
+  // ATS Score & Rankings State
+  const [atsScoreData, setAtsScoreData] = useState<any | null>(null);
+  const [atsRankings, setAtsRankings] = useState<any[]>([]);
+  const [bulletSuggestions, setBulletSuggestions] = useState<any[]>([]);
+  const [selectedAtsResumeId, setSelectedAtsResumeId] = useState<number | string | ''>('');
+  const [loadingAts, setLoadingAts] = useState<boolean>(false);
 
   // Application State
   const [currentApp, setCurrentApp] = useState<Application | null>(null);
@@ -210,6 +218,36 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
     setMatchResult(result);
     setIsMatching(false);
   };
+
+  const loadAtsScoreAndRankings = async (resumeId?: number | string, force = false) => {
+    if (!posting) return;
+    setLoadingAts(true);
+    try {
+      const [scoreRes, rankingsRes, suggRes] = await Promise.all([
+        ArgusDataService.fetchAtsScore(posting.id, resumeId, force),
+        ArgusDataService.fetchAtsRankings(posting.id),
+        ArgusDataService.fetchBulletSuggestions(posting.id, resumeId)
+      ]);
+      if (scoreRes) {
+        setAtsScoreData(scoreRes);
+        if (!selectedAtsResumeId && scoreRes.resume_id) {
+          setSelectedAtsResumeId(scoreRes.resume_id);
+        }
+      }
+      if (rankingsRes) setAtsRankings(rankingsRes);
+      if (suggRes?.suggestions) setBulletSuggestions(suggRes.suggestions);
+    } catch (e) {
+      console.warn('Failed to load ATS scoring data:', e);
+    } finally {
+      setLoadingAts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (posting && activeModalTab === 'ats_fit' && !atsScoreData) {
+      loadAtsScoreAndRankings();
+    }
+  }, [posting, activeModalTab]);
 
   const handleQuickStageChange = (newStage: ApplicationStage) => {
     if (!posting) return;
@@ -606,6 +644,30 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => {
+                    setActiveModalTab('ats_fit');
+                    if (!atsScoreData) loadAtsScoreAndRankings();
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeModalTab === 'ats_fit' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    color: activeModalTab === 'ats_fit' ? 'var(--primary)' : 'var(--gray-500)',
+                    fontWeight: activeModalTab === 'ats_fit' ? 700 : 500,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <FileText size={13} />
+                  <span>ATS-Fit Score & Suggestions</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveModalTab('experiences')}
                   style={{
                     padding: '8px 16px',
@@ -634,6 +696,365 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
                 currentUser={currentUser}
                 onOpenLogModal={() => setIsLogModalOpen(true)}
               />
+            ) : activeModalTab === 'ats_fit' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* 1. Transparent Disclaimer */}
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 'var(--border-radius-md)',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <AlertCircle size={18} color="#0284c7" style={{ flexShrink: 0 }} />
+                  <div style={{ fontSize: '12.5px', color: '#334155', lineHeight: 1.45 }}>
+                    <strong>Estimate Only:</strong> {atsScoreData?.disclaimer || "This ATS-fit score is an ESTIMATE based on heuristic formatting checks and keyword extraction. It does not represent any specific company's proprietary ATS screening algorithm."}
+                  </div>
+                </div>
+
+                {/* 2. Resume Selection & Recompute Bar */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  background: 'var(--bg-white)',
+                  padding: '14px 18px',
+                  borderRadius: 'var(--border-radius-md)',
+                  border: '1px solid var(--gray-200)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 700, color: 'var(--gray-800)' }}>Active Resume:</label>
+                    <select
+                      className="form-select"
+                      value={selectedAtsResumeId ? String(selectedAtsResumeId) : ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSelectedAtsResumeId(val);
+                        loadAtsScoreAndRankings(val);
+                      }}
+                      style={{ fontSize: '12.5px', minWidth: '220px' }}
+                    >
+                      {availableResumes.map(r => (
+                        <option key={r.id} value={String(r.id)}>
+                          {r.label || r.file_name} {r.file_size ? `(${r.file_size})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    onClick={() => loadAtsScoreAndRankings(selectedAtsResumeId, true)}
+                    disabled={loadingAts}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <RotateCw size={13} className={loadingAts ? 'animate-spin' : ''} />
+                    <span>{loadingAts ? 'Computing...' : 'Recompute Score'}</span>
+                  </button>
+                </div>
+
+                {loadingAts && !atsScoreData ? (
+                  <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--gray-500)' }}>
+                    <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 10px' }} />
+                    <p style={{ margin: 0, fontSize: '13px' }}>Evaluating ATS-fit against Job Description...</p>
+                  </div>
+                ) : atsScoreData ? (
+                  <>
+                    {/* 3. High-level Score Overview */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: '14px'
+                    }}>
+                      <div className="card-surface" style={{ padding: '18px', borderLeft: '4px solid var(--primary)', textAlign: 'center' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
+                          Overall ATS Est. Score
+                        </div>
+                        <div style={{ fontSize: '36px', fontWeight: 900, color: 'var(--primary)', marginTop: '4px' }}>
+                          {atsScoreData.score}
+                          <span style={{ fontSize: '18px', color: 'var(--gray-400)', fontWeight: 500 }}>/100</span>
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: atsScoreData.score >= 75 ? '#15803d' : atsScoreData.score >= 50 ? '#b45309' : '#b91c1c', marginTop: '4px' }}>
+                          {atsScoreData.score >= 75 ? 'Strong ATS Alignment' : atsScoreData.score >= 50 ? 'Moderate Fit (Needs Tailoring)' : 'Low Keyword Fit'}
+                        </div>
+                      </div>
+
+                      <div className="card-surface" style={{ padding: '18px', borderLeft: '4px solid #2563eb' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
+                          Deterministic Checks (30%)
+                        </div>
+                        <div style={{ fontSize: '26px', fontWeight: 800, color: '#1d4ed8', marginTop: '4px' }}>
+                          {atsScoreData.breakdown?.deterministic?.score ?? 0}
+                          <span style={{ fontSize: '15px', color: 'var(--gray-400)', fontWeight: 500 }}>/30</span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--gray-600)', marginTop: '4px' }}>
+                          Layout, headings, contact info & bullet metrics
+                        </div>
+                      </div>
+
+                      <div className="card-surface" style={{ padding: '18px', borderLeft: '4px solid #16a34a' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
+                          Keyword Alignment (70%)
+                        </div>
+                        <div style={{ fontSize: '26px', fontWeight: 800, color: '#15803d', marginTop: '4px' }}>
+                          {atsScoreData.breakdown?.keywords?.score ?? 0}
+                          <span style={{ fontSize: '15px', color: 'var(--gray-400)', fontWeight: 500 }}>/70</span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--gray-600)', marginTop: '4px' }}>
+                          Req: {atsScoreData.breakdown?.keywords?.required_score ?? 0}/50 • Pref: {atsScoreData.breakdown?.keywords?.preferred_score ?? 0}/20
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Detailed Breakdown Sections */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                      {/* Left: Deterministic Rules */}
+                      <div className="card-surface" style={{ padding: '16px 18px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px', color: 'var(--gray-900)' }}>
+                          Deterministic ATS Quality Checks
+                        </h4>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12.5px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                              <span><strong>Parse & Density:</strong></span>
+                              <span>{atsScoreData.breakdown?.deterministic?.parse_quality?.score ?? 0}/10 pts</span>
+                            </div>
+                            {(atsScoreData.breakdown?.deterministic?.parse_quality?.warnings || []).length > 0 ? (
+                              <ul style={{ margin: '4px 0 0 16px', padding: 0, color: '#b45309', fontSize: '11.5px' }}>
+                                {atsScoreData.breakdown.deterministic.parse_quality.warnings.map((w: string, i: number) => (
+                                  <li key={i}>{w}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <span style={{ fontSize: '11.5px', color: '#15803d' }}>Clean extractable text structure</span>
+                            )}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                              <span><strong>Core Sections:</strong></span>
+                              <span>{atsScoreData.breakdown?.deterministic?.sections?.score ?? 0}/8 pts</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {(atsScoreData.breakdown?.deterministic?.sections?.found || []).map((sec: string) => (
+                                <span key={sec} style={{ fontSize: '11px', background: '#f0fdf4', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  ✓ {sec}
+                                </span>
+                              ))}
+                              {(atsScoreData.breakdown?.deterministic?.sections?.missing || []).map((sec: string) => (
+                                <span key={sec} style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  ✗ Missing {sec}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                              <span><strong>Contact Info:</strong></span>
+                              <span>{atsScoreData.breakdown?.deterministic?.contact_info?.score ?? 0}/4 pts</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {(atsScoreData.breakdown?.deterministic?.contact_info?.found || []).map((c: string) => (
+                                <span key={c} style={{ fontSize: '11px', background: '#eff6ff', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  ✓ {c}
+                                </span>
+                              ))}
+                              {(atsScoreData.breakdown?.deterministic?.contact_info?.missing || []).map((c: string) => (
+                                <span key={c} style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  ✗ Missing {c}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                              <span><strong>Bullet Quantification:</strong></span>
+                              <span>{atsScoreData.breakdown?.deterministic?.quantification?.score ?? 0}/8 pts</span>
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--gray-600)' }}>
+                              {Math.round((atsScoreData.breakdown?.deterministic?.quantification?.ratio ?? 0) * 100)}% of bullets include metrics ({atsScoreData.breakdown?.deterministic?.quantification?.quantified_bullets ?? 0}/{atsScoreData.breakdown?.deterministic?.quantification?.total_bullets ?? 0})
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Keyword Match */}
+                      <div className="card-surface" style={{ padding: '16px 18px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px', color: 'var(--gray-900)' }}>
+                          Required & Preferred Keywords
+                        </h4>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#15803d', marginBottom: '6px' }}>
+                              Matched Required Keywords ({atsScoreData.breakdown?.keywords?.required_matched?.length ?? 0}):
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {(atsScoreData.breakdown?.keywords?.required_matched || []).map((kw: string) => (
+                                <span key={kw} style={{ fontSize: '11.5px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                  {kw}
+                                </span>
+                              ))}
+                              {(!atsScoreData.breakdown?.keywords?.required_matched || atsScoreData.breakdown.keywords.required_matched.length === 0) && (
+                                <span style={{ fontSize: '12px', color: 'var(--gray-400)' }}>None matched</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#b91c1c', marginBottom: '6px' }}>
+                              Missing Required Keywords ({atsScoreData.breakdown?.keywords?.required_missing?.length ?? 0}):
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {(atsScoreData.breakdown?.keywords?.required_missing || []).map((kw: string) => (
+                                <span key={kw} style={{ fontSize: '11.5px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                  MISSING: {kw}
+                                </span>
+                              ))}
+                              {(!atsScoreData.breakdown?.keywords?.required_missing || atsScoreData.breakdown.keywords.required_missing.length === 0) && (
+                                <span style={{ fontSize: '12px', color: '#15803d' }}>All required keywords present!</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {Object.keys(atsScoreData.breakdown?.keywords?.synonym_matches || {}).length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                                Synonyms Detected:
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {Object.entries(atsScoreData.breakdown.keywords.synonym_matches).map(([target, syn]: any) => (
+                                  <span key={target} style={{ fontSize: '11px', background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {target} ↔ {syn}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5. Phase D Read-only Bullet Suggestions */}
+                    {bulletSuggestions.length > 0 && (
+                      <div className="card-surface" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
+                        <div style={{ marginBottom: '14px' }}>
+                          <h4 style={{ fontSize: '15px', fontWeight: 800, margin: '0 0 4px 0', color: 'var(--gray-900)' }}>
+                            Suggested Bullet Rewrites for Missing Keywords
+                          </h4>
+                          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--gray-600)' }}>
+                            Rephrased strictly from your candidate portfolio ground truth. Never adds unverified skills or metrics.
+                          </p>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {bulletSuggestions.map((sug, idx) => (
+                            <div key={idx} style={{
+                              background: '#fffbeb',
+                              border: '1px solid #fde68a',
+                              borderRadius: 'var(--border-radius-sm)',
+                              padding: '12px 14px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 800, color: '#b45309' }}>
+                                  Missing Keyword: {sug.keyword}
+                                </span>
+                                <span style={{ fontSize: '11px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  Source: {sug.source_project}
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: '12px', color: 'var(--gray-500)', marginBottom: '4px' }}>
+                                <em>Original:</em> "{sug.original_bullet}"
+                              </div>
+
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', lineHeight: 1.45, background: '#fff', padding: '8px 10px', borderRadius: '4px', border: '1px dashed #d97706' }}>
+                                <strong>Suggested Rewrite:</strong> {sug.suggested_rewrite}
+                              </div>
+
+                              {sug.confirmation_needed && (
+                                <div style={{ fontSize: '11px', color: '#b45309', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <AlertCircle size={12} />
+                                  <span>{sug.confirmation_needed}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. All Resumes Ranked vs This Posting */}
+                    {atsRankings.length > 0 && (
+                      <div className="card-surface" style={{ padding: '18px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px', color: 'var(--gray-900)' }}>
+                          Resume Library Rankings for this Job Posting
+                        </h4>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1.5px solid var(--gray-200)', textAlign: 'left', color: 'var(--gray-500)' }}>
+                                <th style={{ padding: '8px' }}>Rank</th>
+                                <th style={{ padding: '8px' }}>Resume Version</th>
+                                <th style={{ padding: '8px' }}>Est. ATS Score</th>
+                                <th style={{ padding: '8px' }}>Required Matched</th>
+                                <th style={{ padding: '8px' }}>Required Missing</th>
+                                <th style={{ padding: '8px' }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {atsRankings.map((r, i) => (
+                                <tr key={r.resume_version_id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                                  <td style={{ padding: '8px', fontWeight: 800, color: i === 0 ? 'var(--primary)' : 'var(--gray-600)' }}>
+                                    #{i + 1}
+                                  </td>
+                                  <td style={{ padding: '8px', fontWeight: 600 }}>
+                                    {r.label}
+                                  </td>
+                                  <td style={{ padding: '8px', fontWeight: 800, color: r.score >= 70 ? '#15803d' : '#b45309' }}>
+                                    {r.score} / 100
+                                  </td>
+                                  <td style={{ padding: '8px', color: '#15803d' }}>
+                                    {r.required_matched_count}
+                                  </td>
+                                  <td style={{ padding: '8px', color: r.required_missing_count > 0 ? '#b91c1c' : 'inherit' }}>
+                                    {r.required_missing_count}
+                                  </td>
+                                  <td style={{ padding: '8px' }}>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary btn-sm"
+                                      style={{ fontSize: '11px', padding: '3px 8px' }}
+                                      onClick={() => {
+                                        setSelectedAtsResumeId(r.resume_version_id);
+                                        loadAtsScoreAndRankings(r.resume_version_id);
+                                      }}
+                                    >
+                                      View Breakdown
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--gray-500)' }}>
+                    No ATS evaluation data available. Click "Recompute Score" above.
+                  </div>
+                )}
+              </div>
             ) : (
               /* ── TWO-COLUMN GRID (Job Info Left, AI Match Right) ── */
               <div className="opportunity-detail-grid">

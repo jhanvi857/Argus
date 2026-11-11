@@ -971,5 +971,185 @@ def update_resume_label(resume_id: int, req: UpdateResumeLabelRequest):
     return {"status": "ok", "resume": updated}
 
 
+@app.post("/postings/{posting_id}/ats-score")
+def get_ats_score(
+    posting_id: int,
+    resume_id: Optional[int] = Query(None),
+    force_refresh: bool = Query(False),
+):
+    """Computes transparent ATS-fit score for a resume against a job posting."""
+    from src.db.db_manager import DatabaseManager
+    from src.services.ats_scorer import score_resume_against_jd, compute_hash
+
+    db = DatabaseManager()
+    posting = db.get_posting_by_id(posting_id)
+    if not posting:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+
+    if resume_id:
+        resume = db.get_resume_version_by_id(resume_id)
+    else:
+        resumes = db.list_resume_versions(include_archived=False)
+        if not resumes:
+            raise HTTPException(status_code=400, detail="No resume uploaded yet. Please upload a resume first.")
+        resume = db.get_resume_version_by_id(resumes[0]["id"])
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+
+    raw_json = posting.raw_json or {}
+    jd_text = (
+        raw_json.get("description")
+        or raw_json.get("job_description")
+        or raw_json.get("text")
+        or f"{posting.title}\n{posting.team or ''}\n{' '.join(raw_json.get('required_skills', []))}"
+    )
+
+    resume_text = resume.get("extracted_text") or ""
+    r_hash = resume.get("file_hash") or compute_hash(resume_text)
+    j_hash = compute_hash(jd_text)
+
+    result = score_resume_against_jd(
+        resume_text=resume_text,
+        jd_text=jd_text,
+        resume_version_id=resume["id"],
+        posting_id=posting.id,
+        resume_hash=r_hash,
+        jd_hash=j_hash,
+        db_manager=db,
+        force_refresh=force_refresh,
+    )
+
+    return {
+        "status": "ok",
+        "posting_id": posting.id,
+        "resume_id": resume["id"],
+        "resume_label": resume.get("label") or resume.get("file_name"),
+        **result,
+    }
+
+
+@app.get("/postings/{posting_id}/ats-rankings")
+def get_ats_rankings(posting_id: int):
+    """Ranks all active resume versions against a job posting by estimated ATS score."""
+    from src.db.db_manager import DatabaseManager
+    from src.services.ats_scorer import score_resume_against_jd, compute_hash
+
+    db = DatabaseManager()
+    posting = db.get_posting_by_id(posting_id)
+    if not posting:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+
+    resumes = db.list_resume_versions(include_archived=False)
+    if not resumes:
+        return {"status": "ok", "posting_id": posting.id, "rankings": []}
+
+    raw_json = posting.raw_json or {}
+    jd_text = (
+        raw_json.get("description")
+        or raw_json.get("job_description")
+        or raw_json.get("text")
+        or f"{posting.title}\n{posting.team or ''}\n{' '.join(raw_json.get('required_skills', []))}"
+    )
+    j_hash = compute_hash(jd_text)
+
+    rankings = []
+    for r_summary in resumes:
+        r_full = db.get_resume_version_by_id(r_summary["id"])
+        if not r_full:
+            continue
+        resume_text = r_full.get("extracted_text") or ""
+        r_hash = r_full.get("file_hash") or compute_hash(resume_text)
+
+        score_data = score_resume_against_jd(
+            resume_text=resume_text,
+            jd_text=jd_text,
+            resume_version_id=r_full["id"],
+            posting_id=posting.id,
+            resume_hash=r_hash,
+            jd_hash=j_hash,
+            db_manager=db,
+            force_refresh=False,
+        )
+        rankings.append({
+            "resume_version_id": r_full["id"],
+            "label": r_full.get("label") or r_full.get("file_name"),
+            "file_name": r_full.get("file_name"),
+            "score": score_data["score"],
+            "required_matched_count": len(score_data["breakdown"]["keywords"]["required_matched"]),
+            "required_missing_count": len(score_data["breakdown"]["keywords"]["required_missing"]),
+            "breakdown": score_data["breakdown"],
+        })
+
+    rankings.sort(key=lambda x: x["score"], reverse=True)
+    return {"status": "ok", "posting_id": posting.id, "rankings": rankings}
+
+
+@app.post("/postings/{posting_id}/bullet-suggestions")
+def get_bullet_suggestions(
+    posting_id: int,
+    resume_id: Optional[int] = Query(None),
+):
+    """Generates read-only suggested bullet rewrites grounded in candidate portfolio projects."""
+    from src.db.db_manager import DatabaseManager
+    from src.services.ats_scorer import score_resume_against_jd, compute_hash
+    from src.services.bullet_suggester import generate_bullet_suggestions
+
+    db = DatabaseManager()
+    posting = db.get_posting_by_id(posting_id)
+    if not posting:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+
+    if resume_id:
+        resume = db.get_resume_version_by_id(resume_id)
+    else:
+        resumes = db.list_resume_versions(include_archived=False)
+        if not resumes:
+            raise HTTPException(status_code=400, detail="No resume uploaded yet.")
+        resume = db.get_resume_version_by_id(resumes[0]["id"])
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume version not found.")
+
+    raw_json = posting.raw_json or {}
+    jd_text = (
+        raw_json.get("description")
+        or raw_json.get("job_description")
+        or raw_json.get("text")
+        or f"{posting.title}\n{posting.team or ''}\n{' '.join(raw_json.get('required_skills', []))}"
+    )
+
+    resume_text = resume.get("extracted_text") or ""
+    score_data = score_resume_against_jd(
+        resume_text=resume_text,
+        jd_text=jd_text,
+        resume_version_id=resume["id"],
+        posting_id=posting.id,
+        db_manager=db,
+    )
+
+    missing = (
+        score_data["breakdown"]["keywords"]["required_missing"]
+        + score_data["breakdown"]["keywords"]["preferred_missing"]
+    )
+
+    projects_raw = db.get_all_projects()
+    projects = [p.model_dump() if hasattr(p, "model_dump") else dict(p) for p in projects_raw]
+
+    suggestions = generate_bullet_suggestions(
+        missing_keywords=missing,
+        resume_text=resume_text,
+        projects=projects,
+    )
+
+    return {
+        "status": "ok",
+        "posting_id": posting.id,
+        "resume_id": resume["id"],
+        "missing_keywords": missing,
+        "suggestions": suggestions,
+    }
+
+
 
 

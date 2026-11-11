@@ -359,6 +359,53 @@ export class ArgusDataService {
     return buildApiUrl(`/resumes/${id}/download`);
   }
 
+  public static async fetchAtsScore(
+    postingId: number,
+    resumeId?: number | string,
+    forceRefresh: boolean = false
+  ): Promise<any> {
+    try {
+      const url = resumeId
+        ? buildApiUrl(`/postings/${postingId}/ats-score?resume_id=${resumeId}&force_refresh=${forceRefresh}`)
+        : buildApiUrl(`/postings/${postingId}/ats-score?force_refresh=${forceRefresh}`);
+      const res = await fetch(url, { method: 'POST' });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Backend ATS score calculation error:', e);
+    }
+    return null;
+  }
+
+  public static async fetchAtsRankings(postingId: number): Promise<any[]> {
+    try {
+      const res = await fetch(buildApiUrl(`/postings/${postingId}/ats-rankings`));
+      if (res.ok) {
+        const data = await res.json();
+        return data.rankings || [];
+      }
+    } catch (e) {
+      console.warn('Backend ATS rankings error:', e);
+    }
+    return [];
+  }
+
+  public static async fetchBulletSuggestions(postingId: number, resumeId?: number | string): Promise<any> {
+    try {
+      const url = resumeId
+        ? buildApiUrl(`/postings/${postingId}/bullet-suggestions?resume_id=${resumeId}`)
+        : buildApiUrl(`/postings/${postingId}/bullet-suggestions`);
+      const res = await fetch(url, { method: 'POST' });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Backend bullet suggestions error:', e);
+    }
+    return null;
+  }
+
   public static saveResume(resume: ResumeVersion): ResumeVersion[] {
     const user = this.getCurrentUser();
     if (!user) return [];

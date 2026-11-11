@@ -1391,6 +1391,58 @@ class DatabaseManager:
             item["created_at"] = str(item["created_at"])
         return item
 
+    def get_ats_score_by_hashes(self, resume_hash: str, jd_hash: str) -> Optional[Dict[str, Any]]:
+        """Retrieves cached ATS score for exact (resume_hash, jd_hash) pair."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id, resume_version_id, posting_id, score, breakdown_json, resume_hash, jd_hash, created_at
+                    FROM ats_scores
+                    WHERE resume_hash = %s AND jd_hash = %s;
+                    """,
+                    (resume_hash, jd_hash),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                item = dict(row)
+                if item.get("created_at"):
+                    item["created_at"] = str(item["created_at"])
+                return item
+
+    def save_ats_score(
+        self,
+        resume_version_id: int,
+        posting_id: int,
+        score: int,
+        breakdown_json: Dict[str, Any],
+        resume_hash: str,
+        jd_hash: str,
+    ) -> Dict[str, Any]:
+        """Saves or updates an ATS score record, caching by (resume_hash, jd_hash)."""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO ats_scores (resume_version_id, posting_id, score, breakdown_json, resume_hash, jd_hash, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (resume_hash, jd_hash)
+                    DO UPDATE SET
+                        score = EXCLUDED.score,
+                        breakdown_json = EXCLUDED.breakdown_json,
+                        created_at = NOW()
+                    RETURNING id, resume_version_id, posting_id, score, breakdown_json, resume_hash, jd_hash, created_at;
+                    """,
+                    (resume_version_id, posting_id, score, Json(breakdown_json), resume_hash, jd_hash),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        item = dict(row)
+        if item.get("created_at"):
+            item["created_at"] = str(item["created_at"])
+        return item
+
 
 
 

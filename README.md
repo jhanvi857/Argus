@@ -13,13 +13,14 @@ Aggregator portals (such as LinkedIn or Indeed) often surface stale, duplicate, 
 - [3. Core Architectural Decisions (ADRs)](#3-core-architectural-decisions-adrs)
 - [4. Data Pipeline and LangGraph Workflows](#4-data-pipeline-and-langgraph-workflows)
 - [5. Database Schema & User Preferences](#5-database-schema--user-preferences)
-- [6. Target Company Directory](#6-target-company-directory)
-- [7. Model Context Protocol (MCP) Server](#7-model-context-protocol-mcp-server)
-- [8. Community & Curated Prep Intelligence](#8-community--curated-prep-intelligence)
-- [9. Monitoring Preferences & Differential Filtering](#9-monitoring-preferences--differential-filtering)
-- [10. Setup and Deployment](#10-setup-and-deployment)
-- [11. Test Suite Verification](#11-test-suite-verification)
-- [12. License](#12-license)
+- [6. Resume Library, ATS-Fit Scoring & Application Pinning](#6-resume-library-ats-fit-scoring--application-pinning)
+- [7. Target Company Directory](#7-target-company-directory)
+- [8. Model Context Protocol (MCP) Server](#8-model-context-protocol-mcp-server)
+- [9. Community & Curated Prep Intelligence](#9-community--curated-prep-intelligence)
+- [10. Monitoring Preferences & Differential Filtering](#10-monitoring-preferences--differential-filtering)
+- [11. Setup and Deployment](#11-setup-and-deployment)
+- [12. Test Suite Verification](#12-test-suite-verification)
+- [13. License](#13-license)
 
 ---
 
@@ -412,7 +413,42 @@ Candidate search filters and notification settings are stored as structured JSON
 
 ---
 
-## 6. Target Company Directory
+## 6. Resume Library, ATS-Fit Scoring, & Application Pinning
+
+Argus provides a security-hardened resume management subsystem, transparent ATS compatibility scoring, immutable application pinning, and read-only bullet rewrite suggestions.
+
+### 6.1 Resume Library & Untrusted Upload Protections
+- **Format Support**: Standard PDF and Word DOCX formats with magic-byte validation (`%PDF-`, `PK\x03\x04`).
+- **Zip-Bomb & Page Limits**: Enforces a 5MB upload cap, max 5 pages for PDFs, and max 25MB uncompressed decompression limit (ratio <= 100x, <= 500 entries) for DOCX.
+- **Safe Storage**: Uploaded files are stored outside the web root at `data/resumes/<sha256_hash>.<ext>`. Original filenames are never used in disk paths and serve display purposes only.
+- **Deduplication**: Resumes are SHA-256 deduplicated. If an identical file is uploaded under a new label, Argus updates the label rather than duplicating the physical file.
+
+### 6.2 Transparent ATS-Fit Scoring (Deterministic + LLM)
+- **Honest Estimation**: Transparently labeled in UI and API responses as a heuristic *estimate*, not an actual employer ATS algorithm.
+- **Deterministic Heuristics (30% weight)**:
+  - Text extractability & layout density checks (flags excessive table pipes or multi-column tab delimiters).
+  - Standard section presence (Education, Experience, Projects, Skills).
+  - Contact information parsing (Email, Phone, LinkedIn/GitHub links).
+  - Bullet quantification ratio (detects percentage metrics, dollar figures, latency gains, and scaling counts).
+- **Keyword Alignment (70% weight)**:
+  - Extracts required vs preferred qualifications from the JD using structured LLM outputs with heuristic fallbacks.
+  - Keyword matching with bidirectional synonym mapping (e.g. `K8s` <-> `Kubernetes`, `Postgres` <-> `PostgreSQL`, `AWS` <-> `Amazon Web Services`).
+  - Strict rule: Unsupported keywords are strictly flagged as `MISSING` and never hallucinated as present.
+  - Caching in `ats_scores` table by `(resume_hash, jd_hash)`.
+
+### 6.3 Immutable Application Pinning
+- **Audit-Proof History**: When a posting moves to `Applied` or subsequent interview stages, Argus requires choosing an active resume version and immutably pins `resume_version_id`, `applied_at`, and `ats_score_at_apply`.
+- **Tamper Resistance**: Subsequent edits to notes or stages preserve past pinned submission records unless explicitly updated via backfill mode.
+- **Submission History View**: The application tracker supports filtering applications by specific resume versions, enabling candidates to see which resume version was sent to which company with direct PDF download access.
+
+### 6.4 Read-Only Bullet Rewrite Suggestions
+- Evaluates missing JD keywords against the candidate's existing resume text and verified project portfolio ground truth (`db/seed_projects.sql`).
+- Rephrases existing bullets to emphasize target capabilities without inventing new experience or metrics.
+- Surfaces an explicit `[Confirmation Needed: ...]` flag on anything requiring user verification.
+
+---
+
+## 7. Target Company Directory
 
 Argus monitors 94 tier-1 companies structured into eight distinct sectors in `config/companies.yaml`:
 
