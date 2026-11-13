@@ -1,5 +1,5 @@
 -- =============================================================================
--- Argus — Curated Real External Interview Experiences & Prep Resources (2022–2026)
+-- Argus - Curated Real External Interview Experiences & Prep Resources (2022–2026)
 -- High-signal interview debriefs, OA questions, round breakdowns & links
 -- Sources: LeetCode Discuss, TeamBlind, GeeksforGeeks, Reddit
 -- =============================================================================
@@ -49,7 +49,7 @@ SELECT c.id, 'technical_interview', 'Google Technical Interview Round 2 (DP on D
 
 #### Questions:
 - **Problem:** Given a directed acyclic graph (DAG) representing service dependency graphs with latency weights on edges, find the longest critical execution path that avoids nodes marked as faulty.
-- **Variation:** Dynamic updates — if an edge latency increases dynamically, recompute the critical path efficiently without re-running full topological sorting.
+- **Variation:** Dynamic updates - if an edge latency increases dynamically, recompute the critical path efficiently without re-running full topological sorting.
 
 #### Key Discussion:
 Used Dijkstra on inverted weights for DAG and maintained incremental topological rank updates.',
@@ -142,7 +142,7 @@ SELECT c.id, 'onsite', 'Citadel Superday Loop (Trading Architecture & Systems)',
 '### Citadel Superday Loop (3 Technical + 1 Fit)
 - **Round 1:** High throughput packet parsing engine (Zero-copy network deserialization).
 - **Round 2:** Graph algorithm (Arbitrage detection in FX exchange rates via Bellman-Ford on logarithmic currency weights).
-- **Round 3:** System debugging — diagnosing latency spikes caused by Linux kernel page faults and context switching.',
+- **Round 3:** System debugging - diagnosing latency spikes caused by Linux kernel page faults and context switching.',
 'TeamBlind', 'https://www.teamblind.com/post/Citadel-Superday-SWE-Experience-Offer-2025-p19k3', NOW()
 FROM companies c WHERE LOWER(c.name) LIKE '%citadel%' LIMIT 1;
 
@@ -248,7 +248,7 @@ FROM companies c WHERE LOWER(c.name) LIKE '%goldman%' LIMIT 1;
 INSERT INTO prep_resources (company_id, stage, title, snippet, source, url, fetched_at)
 SELECT c.id, 'onsite', 'Goldman Sachs Superday Loop (Global Markets Division)',
 '### Goldman Sachs Superday (3 Consecutive 45-Min Rounds)
-- **Round 1:** Graph traversal — Finding arbitrage in multi-currency FX table via negative cycle detection.
+- **Round 1:** Graph traversal - Finding arbitrage in multi-currency FX table via negative cycle detection.
 - **Round 2:** Java memory management, GC pause reduction strategies (ZGC vs G1GC).
 - **Round 3:** Behavioral & Division fit with Managing Director.',
 'TeamBlind', 'https://www.teamblind.com/post/Goldman-Sachs-Superday-Summer-Analyst-Offer-2025-u1928', NOW()
@@ -317,7 +317,7 @@ SELECT c.id, 'oa', 'Microsoft SWE Intern Codility OA (2025/2026)',
    - Greedy interval scheduling with overlapping constraint pruning.
 
 #### Pro Tip:**
-Codility penalizes runtime performance heavily — ensure all operations run strictly within $O(N)$ or $O(N \log N)$.',
+Codility penalizes runtime performance heavily - ensure all operations run strictly within $O(N)$ or $O(N \log N)$.',
 'LeetCode Discuss', 'https://leetcode.com/discuss/interview-experience/4781920/Microsoft-Codility-OA-Questions-2025', NOW()
 FROM companies c WHERE LOWER(c.name) LIKE '%microsoft%' LIMIT 1;
 
@@ -406,7 +406,7 @@ INSERT INTO prep_resources (company_id, stage, title, snippet, source, url, fetc
 SELECT c.id, 'oa', 'Salesforce HackerRank OA (2025/2026)',
 '### Salesforce OA (HackerRank)
 - **Problem 1:** String Compression with Run Length Encoding & K removals.
-- **Problem 2:** Graph BFS — Minimum cost path in grid with teleportation portals.',
+- **Problem 2:** Graph BFS - Minimum cost path in grid with teleportation portals.',
 'LeetCode Discuss', 'https://leetcode.com/discuss/interview-experience/4692019/Salesforce-Software-Engineer-Intern-OA', NOW()
 FROM companies c WHERE LOWER(c.name) LIKE '%salesforce%' LIMIT 1;
 

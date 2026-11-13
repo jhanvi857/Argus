@@ -4,7 +4,7 @@ This module is used ONLY inside the classify_relevance node of the ingestion
 LangGraph. The existing rule-based RelevanceClassifier acts as a fast pre-filter;
 this LLM classifier handles the ambiguous cases that regex can't resolve.
 
-Provider: Groq (llama-3.1-8b-instant) — chosen for ingestion because:
+Provider: Groq (llama-3.1-8b-instant) - chosen for ingestion because:
 - High free-tier ceiling (14,400 req/day vs Gemini's 1,500)
 - Fast inference latency
 - Low-complexity judgment (relevant/not) doesn't need frontier reasoning
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Default model — fast, cheap, sufficient for binary classification
+# Default model - fast, cheap, sufficient for binary classification
 DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
@@ -36,7 +36,7 @@ class LLMClassificationResult(BaseModel):
     )
 
 
-# Role preferences baked into the system prompt — these define what "relevant" means
+# Role preferences baked into the system prompt - these define what "relevant" means
 ROLE_PREFERENCES = """
 Target candidate profile:
 - Career level: Intern, Summer Analyst, Co-op, New Grad, Entry Level (2025/2026)
@@ -99,7 +99,7 @@ def classify_with_llm(
         LLMClassificationResult with relevance judgment and rationale.
 
     Raises:
-        No exception — returns a fallback result on any LLM error.
+        No exception - returns a fallback result on any LLM error.
     """
     # Build classification prompt
     role_pref_text = ROLE_PREFERENCES
@@ -145,9 +145,9 @@ def classify_with_llm(
             )
             return result
         except Exception as exc:
-            logger.warning(f"Groq LLM classification failed: {exc} — switching to Gemini fallback")
+            logger.warning(f"Groq LLM classification failed: {exc} - switching to Gemini fallback")
     else:
-        logger.info("GROQ_API_KEY not configured — automatically using Gemini API")
+        logger.info("GROQ_API_KEY not configured - automatically using Gemini API")
 
     # 2. Fallback: Try Gemini LLM if Groq failed or unconfigured
     gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
@@ -182,7 +182,7 @@ def classify_with_llm(
                 continue
 
     # 3. Graceful degradation: fall back to rule-based classifier
-    logger.warning("Both Groq and Gemini LLM calls failed or were unconfigured — falling back to rule-based")
+    logger.warning("Both Groq and Gemini LLM calls failed or were unconfigured - falling back to rule-based")
     return _fallback_result("Groq and Gemini LLMs unavailable")
 
 
@@ -195,7 +195,7 @@ def _fallback_result(reason: str) -> LLMClassificationResult:
     return LLMClassificationResult(
         relevant=False,
         confidence=0.0,
-        rationale=f"LLM unavailable ({reason}) — using rule-based result only",
+        rationale=f"LLM unavailable ({reason}) - using rule-based result only",
         detected_level=None,
         detected_domain=None,
     )

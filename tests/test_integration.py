@@ -113,7 +113,7 @@ class TestSystemIntegration(unittest.TestCase):
         self.assertIn("IF", node_names)
         self.assertIn("Code", node_names)
         self.assertIn("Send Email", node_names)
-        self.assertIn("Postgres — Mark Notified", node_names)
+        self.assertIn("Postgres - Mark Notified", node_names)
 
         # Check HTTP Request targets backend ingestion API
         http_node = next(n for n in workflow["nodes"] if n["name"] == "HTTP Request")
@@ -127,7 +127,7 @@ class TestSystemIntegration(unittest.TestCase):
         self.assertIn("p.notified_at IS NULL", query_text)
 
         # Check Mark Notified node updates notified_at
-        mark_node = next(n for n in workflow["nodes"] if n["name"] == "Postgres — Mark Notified")
+        mark_node = next(n for n in workflow["nodes"] if n["name"] == "Postgres - Mark Notified")
         update_query = mark_node["parameters"]["query"]
         self.assertIn("UPDATE postings", update_query)
         self.assertIn("SET notified_at = NOW()", update_query)

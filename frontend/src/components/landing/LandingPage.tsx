@@ -357,7 +357,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             maxWidth: '520px',
             marginBottom: '36px'
           }}>
-            Argus monitors official career pages, finds relevant opportunities, and uses AI to match them with your projects, skills and experience. So you can focus on what matters — getting hired.
+            Argus monitors official career pages, finds relevant opportunities, and uses AI to match them with your projects, skills and experience. So you can focus on what matters - getting hired.
           </p>
 
           {/* CTA Buttons */}
@@ -1070,7 +1070,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               5. Track
             </h3>
             <p style={{ fontSize: '12.5px', color: '#737367', lineHeight: 1.45, maxWidth: '180px' }}>
-              Track every application stage, OA, interviews and outcomes — in one place.
+              Track every application stage, OA, interviews and outcomes - in one place.
             </p>
           </div>
         </div>
@@ -1211,9 +1211,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12.5px', color: '#525246', marginBottom: '12px' }}>
-                <div>• SWE Summer Analyst — <strong style={{ color: '#ad2831' }}>New</strong></div>
-                <div>• Software Engineering Intern — <strong>Interested</strong></div>
-                <div>• Technology Analyst — <strong>Applied</strong></div>
+                <div>• SWE Summer Analyst - <strong style={{ color: '#ad2831' }}>New</strong></div>
+                <div>• Software Engineering Intern - <strong>Interested</strong></div>
+                <div>• Technology Analyst - <strong>Applied</strong></div>
               </div>
 
               <div style={{
@@ -1337,7 +1337,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Direct ATS Vigilance
               </h3>
               <p style={{ fontSize: '13.5px', color: '#6b6b5e', lineHeight: 1.6, margin: 0 }}>
-                Argus monitors official career pages (Workday, Greenhouse, Lever, and custom APIs) on a scheduled cadence — bypassing stale job boards, duplicate postings, and recruiter spam.
+                Argus monitors official career pages (Workday, Greenhouse, Lever, and custom APIs) on a scheduled cadence - bypassing stale job boards, duplicate postings, and recruiter spam.
               </p>
             </div>
 
@@ -1368,7 +1368,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Grounded Portfolio Matcher
               </h3>
               <p style={{ fontSize: '13.5px', color: '#6b6b5e', lineHeight: 1.6, margin: 0 }}>
-                When you find an opportunity, our LangGraph AI analyzes the JD against your actual verified projects and skills — recommending exactly which bullets and keywords to emphasize with zero hallucination.
+                When you find an opportunity, our LangGraph AI analyzes the JD against your actual verified projects and skills - recommending exactly which bullets and keywords to emphasize with zero hallucination.
               </p>
             </div>
 

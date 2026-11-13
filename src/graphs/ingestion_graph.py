@@ -1,4 +1,4 @@
-"""Ingestion LangGraph — extract_fields → classify_relevance → dedupe.
+"""Ingestion LangGraph - extract_fields → classify_relevance → dedupe.
 
 This graph runs automatically on every new raw posting produced by the diff
 engine. It replaces the inline classify_posting() call in the ingestion
@@ -50,13 +50,13 @@ def extract_fields(state: IngestionState) -> dict:
     - Lever: {text, categories.team, categories.location, hostedUrl, ...}
     - Generic: best-effort extraction from common field names
 
-    This is plain Python — no LLM call.
+    This is plain Python - no LLM call.
     """
     raw = state.get("raw_posting", {})
 
     if not raw:
         return {
-            "error": "Empty raw_posting — nothing to extract",
+            "error": "Empty raw_posting - nothing to extract",
             "status": "error",
         }
 
@@ -184,7 +184,7 @@ def classify_relevance(state: IngestionState) -> dict:
     """Two-stage relevance classification: rule-based pre-filter + Groq LLM.
 
     Stage 1: Existing RelevanceClassifier (free, instant, deterministic).
-    Stage 2 (conditional): Groq LLM for nuanced judgment — only invoked when:
+    Stage 2 (conditional): Groq LLM for nuanced judgment - only invoked when:
       - Rule-based says relevant (confirm with LLM)
       - Rule-based is uncertain (confidence < RULE_BASED_SKIP_LLM_CONFIDENCE)
 
@@ -203,7 +203,7 @@ def classify_relevance(state: IngestionState) -> dict:
     if not title:
         return {
             "is_relevant": False,
-            "classification_rationale": "No title extracted — cannot classify",
+            "classification_rationale": "No title extracted - cannot classify",
             "rule_based_result": None,
             "llm_classification": None,
             "status": "irrelevant",
@@ -225,7 +225,7 @@ def classify_relevance(state: IngestionState) -> dict:
     if not rule_result.relevant and rule_result.confidence >= RULE_BASED_SKIP_LLM_CONFIDENCE:
         logger.debug(
             f"[{state.get('company_name')}] Rule-based REJECT (conf={rule_result.confidence:.2f}): "
-            f"'{title}' — {rule_result.rationale}"
+            f"'{title}' - {rule_result.rationale}"
         )
         return {
             "is_relevant": False,
@@ -258,7 +258,7 @@ def classify_relevance(state: IngestionState) -> dict:
         is_relevant = llm_result.relevant
         rationale = f"LLM: {llm_result.rationale}"
     else:
-        # LLM was unavailable — fall back to rule-based
+        # LLM was unavailable - fall back to rule-based
         is_relevant = rule_result.relevant
         rationale = f"Rule-based (LLM fallback): {rule_result.rationale}"
 
@@ -266,7 +266,7 @@ def classify_relevance(state: IngestionState) -> dict:
 
     logger.info(
         f"[{state.get('company_name')}] Classification: relevant={is_relevant}, "
-        f"'{title}' — {rationale}"
+        f"'{title}' - {rationale}"
     )
 
     return {
@@ -314,7 +314,7 @@ def dedupe(state: IngestionState) -> dict:
             days=DEDUP_WINDOW_DAYS,
         )
     except Exception as exc:
-        logger.warning(f"Dedup DB lookup failed: {exc} — skipping dedup")
+        logger.warning(f"Dedup DB lookup failed: {exc} - skipping dedup")
         return {
             "is_duplicate": False,
             "duplicate_of_posting_id": None,
@@ -403,7 +403,7 @@ def build_ingestion_graph() -> StateGraph:
     return graph
 
 
-# Compiled graph instance — reused across invocations
+# Compiled graph instance - reused across invocations
 ingestion_graph = build_ingestion_graph().compile()
 
 

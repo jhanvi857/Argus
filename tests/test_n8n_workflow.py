@@ -40,7 +40,7 @@ class TestN8nWorkflow(unittest.TestCase):
         self.assertIn("IF", node_names)
         self.assertIn("Code", node_names)
         self.assertIn("Send Email", node_names)
-        self.assertIn("Postgres — Mark Notified", node_names)
+        self.assertIn("Postgres - Mark Notified", node_names)
 
     def test_http_request_node_configuration(self):
         http_node = next(n for n in self.workflow["nodes"] if n.get("name") == "HTTP Request")

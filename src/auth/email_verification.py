@@ -198,11 +198,11 @@ def send_smtp_email(to_email: str, otp_code: str, full_name: str) -> bool:
 
         plain_text = (
             f"Hello {full_name},\n\n"
-            f"Welcome to Argus — Job Posting Monitor & Portfolio Matcher.\n\n"
+            f"Welcome to Argus - Job Posting Monitor & Portfolio Matcher.\n\n"
             f"Your verification code is: {otp_code}\n\n"
             f"This code will expire in 10 minutes.\n"
             f"Please enter this code in the registration screen to verify your email address.\n\n"
-            f"— The Argus Team"
+            f"- The Argus Team"
         )
 
         html_text = f"""

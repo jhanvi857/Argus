@@ -185,7 +185,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     // Recent new postings activity matching user preferences
     postings.filter(p => filterPostingByPreferences(p, currentUser.preferences, activeRoleLevel)).slice(0, 3).forEach(p => {
       activities.push({
-        text: `New relevant posting: ${p.company_name} — ${p.title}`,
+        text: `New relevant posting: ${p.company_name} - ${p.title}`,
         time: getTimeAgo(p.first_seen_at),
         type: 'posting'
       });

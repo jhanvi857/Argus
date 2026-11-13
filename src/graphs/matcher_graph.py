@@ -1,4 +1,4 @@
-"""Phase 6 Matcher LangGraph — On-demand JD-to-portfolio matcher.
+"""Phase 6 Matcher LangGraph - On-demand JD-to-portfolio matcher.
 
 Runs on "Interested" action in UI. Evaluates a job description against the candidate's
 real project portfolio as ground truth (never generic keyword matching or hallucinated
@@ -305,7 +305,7 @@ def load_portfolio(state: MatcherState) -> dict:
             portfolio = [p.model_dump() for p in db_projects]
             return {"portfolio": portfolio}
     except Exception as exc:
-        logger.warning(f"Could not load portfolio from DB: {exc} — using verified ground truth portfolio")
+        logger.warning(f"Could not load portfolio from DB: {exc} - using verified ground truth portfolio")
 
     # Use verified ground truth portfolio
     return {"portfolio": FALLBACK_PORTFOLIO}
@@ -318,7 +318,7 @@ def load_portfolio(state: MatcherState) -> dict:
 def prefilter_projects(state: MatcherState) -> dict:
     """Pre-filters candidate projects by tag and keyword overlap with JD.
 
-    This is plain Python — deterministic, fast, and free.
+    This is plain Python - deterministic, fast, and free.
     Computes lexical and conceptual overlap between job_data and portfolio.
     Selects top candidates into `shortlist`.
     """
@@ -402,7 +402,7 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
 
             return parsed.model_dump()
         except Exception as exc:
-            logger.warning(f"Groq primary LLM call failed: {exc} — attempting secondary Groq model")
+            logger.warning(f"Groq primary LLM call failed: {exc} - attempting secondary Groq model")
             try:
                 from langchain_groq import ChatGroq
                 llm = ChatGroq(
@@ -418,7 +418,7 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
                 parsed: MatchResult = parser.parse(response.content)
                 return parsed.model_dump()
             except Exception as exc2:
-                logger.warning(f"Groq secondary LLM call failed: {exc2} — attempting Gemini")
+                logger.warning(f"Groq secondary LLM call failed: {exc2} - attempting Gemini")
 
     # 2. Try Gemini (fallback from Groq or primary if Groq unconfigured)
     if gemini_key and not gemini_key.startswith(("your_", "AIzaSy_your_")):
@@ -448,7 +448,7 @@ def call_llm_for_match(job_data: Dict[str, Any], shortlist: List[Dict[str, Any]]
 
                 return parsed.model_dump()
             except Exception as exc:
-                logger.warning(f"Gemini LLM model {g_model} failed: {exc} — trying next model")
+                logger.warning(f"Gemini LLM model {g_model} failed: {exc} - trying next model")
                 continue
 
     # 3. Deterministic Grounded Matcher (guarantees test and offline reliability)
